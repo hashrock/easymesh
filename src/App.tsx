@@ -543,7 +543,11 @@ function App() {
         )}
         {selectedBoneId && !currentKf && (
           <div className="bone-list">
-            <div className="panel-empty">タイムラインでキーフレームを選択してください</div>
+            <div className="anim-actions">
+              <button onClick={() => addKeyframeAt(currentTime, selectedBoneId)}>
+                {currentTime.toFixed(2)}s にキーフレーム追加
+              </button>
+            </div>
           </div>
         )}
         {!selectedBoneId && (
