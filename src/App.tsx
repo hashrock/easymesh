@@ -703,6 +703,10 @@ function App() {
             {/* Layer panel (left) */}
             <div className="layer-panel">
               <div className="panel-title">レイヤ</div>
+              <div className={`layer-item ${selectedLayerId === null ? "selected" : ""}`}
+                onClick={() => setSelectedLayerId(null)}>
+                <span className="layer-name">グローバル</span>
+              </div>
               {layers.slice().sort((a, b) => b.zOrder - a.zOrder).map(layer => (
                 <div key={layer.id} className={`layer-item ${layer.id === selectedLayerId ? "selected" : ""}`}
                   onClick={() => setSelectedLayerId(layer.id)}>
