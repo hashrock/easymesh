@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import Delaunator from "delaunator";
 import "./App.css";
 
-// --- Contour extraction (marching squares on alpha channel) ---
+// --- Contour extraction ---
 
 function getAlphaMask(
   imageData: ImageData,
@@ -16,32 +16,92 @@ function getAlphaMask(
   return mask;
 }
 
-/** Simple contour tracing on binary mask – returns ordered boundary points */
-function traceContour(
+/**
+ * Moore neighborhood contour tracing.
+ * Traces the outer boundary of the largest connected opaque region,
+ * returning ordered points that follow the actual shape (concave-aware).
+ */
+function mooreTrace(
   mask: Uint8Array,
   w: number,
   h: number
 ): [number, number][] {
-  // Find boundary pixels (opaque pixel adjacent to transparent or edge)
-  const boundary: [number, number][] = [];
-  for (let y = 0; y < h; y++) {
+  // Find the first opaque pixel (scan top-left to bottom-right)
+  let startX = -1,
+    startY = -1;
+  outer: for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (mask[y * w + x] === 0) continue;
-      const isEdge =
-        x === 0 ||
-        x === w - 1 ||
-        y === 0 ||
-        y === h - 1 ||
-        mask[y * w + (x - 1)] === 0 ||
-        mask[y * w + (x + 1)] === 0 ||
-        mask[(y - 1) * w + x] === 0 ||
-        mask[(y + 1) * w + x] === 0;
-      if (isEdge) {
-        boundary.push([x, y]);
+      if (mask[y * w + x] === 1) {
+        startX = x;
+        startY = y;
+        break outer;
       }
     }
   }
-  return boundary;
+  if (startX === -1) return [];
+
+  // Moore neighborhood: 8 directions clockwise from left
+  //  5 6 7
+  //  4 . 0
+  //  3 2 1
+  const dx = [1, 1, 0, -1, -1, -1, 0, 1];
+  const dy = [0, 1, 1, 1, 0, -1, -1, -1];
+
+  const getPixel = (x: number, y: number) =>
+    x >= 0 && x < w && y >= 0 && y < h ? mask[y * w + x] : 0;
+
+  const contour: [number, number][] = [];
+  let cx = startX,
+    cy = startY;
+  // Start direction: coming from the left (direction 4), so backtrack starts at 5
+  let dir = 7; // last direction we came from
+
+  const maxIter = w * h * 2;
+  let iter = 0;
+
+  do {
+    contour.push([cx, cy]);
+
+    // Start searching from (dir + 5) % 8, which is backtrack + 1 clockwise
+    const startDir = (dir + 5) % 8;
+    let found = false;
+
+    for (let i = 0; i < 8; i++) {
+      const d = (startDir + i) % 8;
+      const nx = cx + dx[d];
+      const ny = cy + dy[d];
+      if (getPixel(nx, ny) === 1) {
+        dir = d;
+        cx = nx;
+        cy = ny;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) break;
+    if (++iter > maxIter) break;
+  } while (cx !== startX || cy !== startY);
+
+  return contour;
+}
+
+/** Subsample contour to reduce point count before simplification */
+function subsampleContour(
+  points: [number, number][],
+  step: number
+): [number, number][] {
+  if (points.length <= step) return points;
+  const result: [number, number][] = [];
+  for (let i = 0; i < points.length; i += step) {
+    result.push(points[i]);
+  }
+  // Ensure the last point is included
+  const last = points[points.length - 1];
+  if (result[result.length - 1] !== last) {
+    result.push(last);
+  }
+  return result;
 }
 
 /** Simplify polygon using Ramer-Douglas-Peucker */
@@ -88,46 +148,37 @@ function pointLineDistance(
   return Math.hypot(px - (lx1 + t * dx), py - (ly1 + t * dy));
 }
 
-/** Order boundary points by angle from centroid to form a polygon */
-function orderByAngle(points: [number, number][]): [number, number][] {
-  if (points.length === 0) return [];
-  let cx = 0,
-    cy = 0;
-  for (const [x, y] of points) {
-    cx += x;
-    cy += y;
-  }
-  cx /= points.length;
-  cy /= points.length;
+/** Check if a triangle's centroid falls inside the opaque mask */
+function isTriangleInMask(
+  p1: [number, number],
+  p2: [number, number],
+  p3: [number, number],
+  mask: Uint8Array,
+  w: number,
+  h: number
+): boolean {
+  // Check centroid
+  const cx = (p1[0] + p2[0] + p3[0]) / 3;
+  const cy = (p1[1] + p2[1] + p3[1]) / 3;
+  const ix = Math.round(cx);
+  const iy = Math.round(cy);
+  if (ix < 0 || ix >= w || iy < 0 || iy >= h) return false;
+  if (mask[iy * w + ix] === 0) return false;
 
-  return [...points].sort(
-    (a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx)
-  );
-}
-
-/** Compute convex hull (Graham scan) */
-function convexHull(points: [number, number][]): [number, number][] {
-  if (points.length < 3) return points;
-  const pts = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-
-  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
-    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-
-  const lower: [number, number][] = [];
-  for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0)
-      lower.pop();
-    lower.push(p);
+  // Also check midpoints of edges to catch thin triangles spanning gaps
+  const midpoints: [number, number][] = [
+    [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2],
+    [(p2[0] + p3[0]) / 2, (p2[1] + p3[1]) / 2],
+    [(p3[0] + p1[0]) / 2, (p3[1] + p1[1]) / 2],
+  ];
+  for (const [mx, my] of midpoints) {
+    const mix = Math.round(mx);
+    const miy = Math.round(my);
+    if (mix < 0 || mix >= w || miy < 0 || miy >= h) return false;
+    if (mask[miy * w + mix] === 0) return false;
   }
 
-  const upper: [number, number][] = [];
-  for (const p of pts.reverse()) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0)
-      upper.pop();
-    upper.push(p);
-  }
-
-  return lower.slice(0, -1).concat(upper.slice(0, -1));
+  return true;
 }
 
 /** Sample points along polygon edges */
@@ -212,13 +263,15 @@ function App() {
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
       const mask = getAlphaMask(imageData, 10);
 
-      // Get boundary and simplify
-      const boundary = traceContour(mask, img.width, img.height);
-      const ordered = orderByAngle(boundary);
-      const hull = convexHull(ordered);
-      const simplified = rdpSimplify(hull, spacing * 0.3);
+      // Trace actual contour using Moore neighborhood
+      const rawContour = mooreTrace(mask, img.width, img.height);
+      if (rawContour.length < 3) return;
 
-      // Sample edge points + interior points
+      // Subsample then simplify with RDP
+      const subsampled = subsampleContour(rawContour, Math.max(1, Math.floor(spacing * 0.3)));
+      const simplified = rdpSimplify(subsampled, spacing * 0.5);
+
+      // Sample edge points along the concave outline + interior points
       const edgePoints = samplePolygonEdges(simplified, spacing);
       const interiorPoints = generateInteriorPoints(
         simplified,
@@ -239,9 +292,21 @@ function App() {
       }
       const delaunay = new Delaunator(coords);
 
+      // Filter out triangles whose centroid/midpoints fall in transparent area
+      const rawTriangles = Array.from(delaunay.triangles);
+      const filteredTriangles: number[] = [];
+      for (let i = 0; i < rawTriangles.length; i += 3) {
+        const a = rawTriangles[i];
+        const b = rawTriangles[i + 1];
+        const c = rawTriangles[i + 2];
+        if (isTriangleInMask(allPoints[a], allPoints[b], allPoints[c], mask, img.width, img.height)) {
+          filteredTriangles.push(a, b, c);
+        }
+      }
+
       setMeshData({
         points: allPoints,
-        triangles: Array.from(delaunay.triangles),
+        triangles: filteredTriangles,
         hull: simplified,
       });
     },
