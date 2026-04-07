@@ -44,6 +44,11 @@ function App() {
   const workerBusyRef = useRef(false);
   const isPaintingRef = useRef(false);
   const drawRequestedRef = useRef(false);
+  const [weightsRev, setWeightsRev] = useState(0);
+  const updateWeights = useCallback((w: VertexWeights[]) => {
+    setVertexWeights(w);
+    setWeightsRev(r => r + 1);
+  }, []);
 
   // --- Worker ---
   useEffect(() => {
@@ -178,7 +183,7 @@ function App() {
           meshData.points, vertexWeights.length ? vertexWeights : meshData.points.map(() => ({})),
           [x, y], brushRadius, brushStrength, selectedBoneId
         );
-        setVertexWeights(newWeights);
+        updateWeights(newWeights);
       } else if (bindTool === "select" && meshData) {
         // Find nearest vertex
         let minDist = Infinity;
@@ -221,7 +226,7 @@ function App() {
         meshData.points, vertexWeights.length ? vertexWeights : meshData.points.map(() => ({})),
         [x, y], brushRadius, brushStrength, selectedBoneId
       );
-      setVertexWeights(newWeights);
+      updateWeights(newWeights);
     }
   }, [appMode, pendingBone, bones, canvasCoords, bindTool, selectedBoneId, meshData, vertexWeights, brushRadius, brushStrength]);
 
@@ -244,8 +249,8 @@ function App() {
   const handleAutoBind = useCallback(() => {
     if (!meshData || bones.length === 0) return;
     const weights = autoBind(meshData.points, bones);
-    setVertexWeights(weights);
-  }, [meshData, bones]);
+    updateWeights(weights);
+  }, [meshData, bones, updateWeights]);
 
   // --- Draw ---
   const draw = useCallback(() => {
@@ -315,7 +320,7 @@ function App() {
   const depsKey = JSON.stringify({
     showImage, showMesh, showPoints, appMode, pendingBone,
     bonesLen: bones.length, selectedBoneId, hoveredBoneId,
-    meshLen: meshData?.points.length, weightsLen: vertexWeights.length,
+    meshLen: meshData?.points.length, weightsRev,
     selVerts: [...selectedVertices].join(","),
   });
   if (depsKey !== prevDeps.current) {
@@ -357,7 +362,7 @@ function App() {
                   vertexWeights.length ? vertexWeights : (meshData?.points ?? []).map(() => ({})),
                   indices, bone.id, val
                 );
-                setVertexWeights(newWeights);
+                updateWeights(newWeights);
               }}
             />
             <span className="weight-value">{avg[bone.id].toFixed(2)}</span>
