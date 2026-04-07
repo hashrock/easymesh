@@ -38,29 +38,62 @@ export function autoBind(
   bones: Bone[],
   attachBoneId?: string | null
 ): VertexWeights[] {
-  let bindBones: Bone[];
+  // If attached to a bone, that bone gets implicit 100% weight as base.
+  // Child bones of the attach bone can override via nearest-bone assignment.
   if (attachBoneId) {
-    // Use the attach bone's descendants (excluding the attach bone itself if it's ROOT)
     const descendants = getDescendants(bones, attachBoneId);
-    bindBones = bones.filter(b => descendants.has(b.id) && b.id !== bones[0]?.id);
-  } else {
-    // No attach bone: use all non-ROOT bones
-    bindBones = bones.filter((_, i) => i > 0);
+    // Child bones (excluding the attach bone itself) for local deformation
+    const childBones = bones.filter(b => descendants.has(b.id) && b.id !== attachBoneId);
+
+    if (childBones.length === 0) {
+      // No children: all vertices follow the attach bone
+      return points.map(() => ({ [attachBoneId]: 1.0 }));
+    }
+
+    // Assign each vertex to nearest child bone, or fall back to attach bone
+    return points.map(([px, py]) => {
+      let minDist = Infinity;
+      let nearestId = attachBoneId;
+
+      for (const bone of childBones) {
+        const dist = pointToSegmentDist(px, py, bone.headX, bone.headY, bone.tailX, bone.tailY);
+        if (dist < minDist) {
+          minDist = dist;
+          nearestId = bone.id;
+        }
+      }
+
+      // Always include attach bone with some weight for parent following
+      // Vertices close to a child bone: mostly child. Far from all children: mostly attach.
+      const attachDist = pointToSegmentDist(px, py,
+        bones.find(b => b.id === attachBoneId)!.headX, bones.find(b => b.id === attachBoneId)!.headY,
+        bones.find(b => b.id === attachBoneId)!.tailX, bones.find(b => b.id === attachBoneId)!.tailY);
+
+      if (nearestId === attachBoneId) {
+        return { [attachBoneId]: 1.0 };
+      }
+
+      // Blend: if vertex is much closer to child than attach, mostly child
+      const ratio = Math.min(1, minDist / (attachDist + 1));
+      if (ratio > 0.8) {
+        // Far from child bones, use attach bone
+        return { [attachBoneId]: 1.0 };
+      }
+      return { [nearestId]: 1.0 };
+    });
   }
+
+  // No attach bone: use all non-ROOT bones
+  const bindBones = bones.filter((_, i) => i > 0);
   if (bindBones.length === 0) return points.map(() => ({}));
 
   return points.map(([px, py]) => {
     let minDist = Infinity;
     let nearestId = bindBones[0].id;
-
     for (const bone of bindBones) {
       const dist = pointToSegmentDist(px, py, bone.headX, bone.headY, bone.tailX, bone.tailY);
-      if (dist < minDist) {
-        minDist = dist;
-        nearestId = bone.id;
-      }
+      if (dist < minDist) { minDist = dist; nearestId = bone.id; }
     }
-
     return { [nearestId]: 1.0 };
   });
 }
