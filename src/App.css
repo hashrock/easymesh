@@ -354,36 +354,28 @@ header h1 {
   border-color: #0099cc;
 }
 
-/* Timeline popup */
-.timeline-popup {
-  position: fixed;
-  z-index: 100;
-  background: #222;
-  border: 1px solid #555;
-  border-radius: 6px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  transform: translate(-50%, -100%) translateY(-8px);
-}
-.timeline-popup button {
-  padding: 4px 12px;
-  background: #333;
-  color: #fff;
-  border: 1px solid #555;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.timeline-popup button:first-child {
+/* Timeline inline add button */
+.timeline-add-btn {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
   background: #2a6a2a;
-  border-color: #3a8a3a;
+  border: 1px solid #3a8a3a;
+  color: #fff;
+  font-size: 14px;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 4;
+  transition: background 0.1s, transform 0.1s;
 }
-.timeline-popup button:first-child:hover { background: #3a8a3a; }
-.timeline-popup button:hover { background: #444; }
+.timeline-add-btn:hover {
+  background: #3a8a3a;
+  transform: translate(-50%, -50%) scale(1.2);
+}
 
 /* Stats */
 .stats {

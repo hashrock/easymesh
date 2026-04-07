@@ -42,7 +42,7 @@ function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedKfIdx, setSelectedKfIdx] = useState<number | null>(null); // index in selected bone's track
-  const [timelinePopup, setTimelinePopup] = useState<{ boneId: string; time: number; x: number; y: number } | null>(null);
+  const [addKfMarker, setAddKfMarker] = useState<{ boneId: string; time: number; pct: number } | null>(null);
   const animFrameRef = useRef(0);
   const lastTimeRef = useRef(0);
 
@@ -763,6 +763,7 @@ function App() {
                       const rect = e.currentTarget.getBoundingClientRect();
                       const t = ((e.clientX - rect.left) / rect.width) * clip.duration;
                       const clickedTime = Math.max(0, Math.min(clip.duration, t));
+                      const pct = (clickedTime / clip.duration) * 100;
                       const track = clip.tracks[bone.id] ?? [];
                       const nearKf = track.findIndex(kf => Math.abs((kf.time / clip.duration) - (clickedTime / clip.duration)) < 0.02);
                       if (nearKf >= 0) {
@@ -770,16 +771,13 @@ function App() {
                         setCurrentTime(track[nearKf].time);
                         setSelectedBoneId(bone.id);
                         setIsPlaying(false);
-                        setTimelinePopup(null);
-                      } else if (bone.id === selectedBoneId) {
-                        setTimelinePopup({ boneId: bone.id, time: clickedTime, x: e.clientX, y: e.clientY });
-                        setIsPlaying(false);
+                        setAddKfMarker(null);
                       } else {
                         setSelectedBoneId(bone.id);
                         setSelectedKfIdx(null);
                         setCurrentTime(clickedTime);
                         setIsPlaying(false);
-                        setTimelinePopup(null);
+                        setAddKfMarker({ boneId: bone.id, time: clickedTime, pct });
                       }
                     }}>
                     <div className="timeline-playhead" style={{ left: `${(currentTime / clip.duration) * 100}%` }} />
@@ -796,26 +794,26 @@ function App() {
                             setCurrentTime(kf.time);
                             setSelectedBoneId(bone.id);
                             setIsPlaying(false);
-                            setTimelinePopup(null);
+                            setAddKfMarker(null);
                           }}
                         />
                       );
                     })}
+                    {/* Inline [+] button */}
+                    {addKfMarker && addKfMarker.boneId === bone.id && (
+                      <div className="timeline-add-btn"
+                        style={{ left: `${addKfMarker.pct}%` }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addKeyframeAt(addKfMarker.time, addKfMarker.boneId);
+                          setAddKfMarker(null);
+                        }}>
+                        +
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
-              {/* Add keyframe popup */}
-              {timelinePopup && (
-                <div className="timeline-popup" style={{ left: timelinePopup.x, top: timelinePopup.y }}>
-                  <button onClick={() => {
-                    addKeyframeAt(timelinePopup.time, timelinePopup.boneId);
-                    setTimelinePopup(null);
-                  }}>
-                    {timelinePopup.time.toFixed(2)}s にキーフレーム追加
-                  </button>
-                  <button onClick={() => setTimelinePopup(null)}>キャンセル</button>
-                </div>
-              )}
             </div>
           )}
 
