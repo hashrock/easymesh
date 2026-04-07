@@ -598,6 +598,10 @@ function App() {
                     onChange={(e) => handlePaddingChange(Number(e.target.value))} />
                   <span>{padding}px</span>
                 </label>
+                <button onClick={() => {
+                  const auto = Math.ceil(meshDensity * 0.5) + 2;
+                  handlePaddingChange(Math.min(30, auto));
+                }}>自動</button>
                 <select value={contourMode}
                   onChange={(e) => handleContourModeChange(e.target.value as "concave" | "convex")}>
                   <option value="concave">輪郭追従</option>
