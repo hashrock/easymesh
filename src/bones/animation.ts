@@ -67,9 +67,83 @@ export function evaluateAnimation(
   return result;
 }
 
+/** World-space transform: combined rotation + translation */
+interface WorldTransform {
+  rotation: number;
+  tx: number; // world translate X
+  ty: number; // world translate Y
+  pivotX: number; // pivot (bone head) in world space
+  pivotY: number;
+}
+
+/**
+ * Compute world-space transforms by walking the bone hierarchy (parent → child).
+ * Each child inherits its parent's rotation and translation.
+ */
+function computeWorldTransforms(
+  bones: Bone[],
+  localTransforms: Record<string, BoneTransform>
+): Record<string, WorldTransform> {
+  const boneMap = new Map<string, Bone>();
+  for (const bone of bones) boneMap.set(bone.id, bone);
+
+  const world: Record<string, WorldTransform> = {};
+
+  // Topological order: process parents before children
+  const processed = new Set<string>();
+  const queue = bones.filter(b => !b.parentId);
+  while (queue.length > 0) {
+    const bone = queue.shift()!;
+    if (processed.has(bone.id)) continue;
+    processed.add(bone.id);
+
+    const local = localTransforms[bone.id] ?? { rotation: 0, translateX: 0, translateY: 0 };
+
+    if (!bone.parentId || !world[bone.parentId]) {
+      // Root bone: local = world
+      world[bone.id] = {
+        rotation: local.rotation,
+        tx: local.translateX,
+        ty: local.translateY,
+        pivotX: bone.headX,
+        pivotY: bone.headY,
+      };
+    } else {
+      // Child bone: apply parent's world transform to this bone's head to get new pivot
+      const parent = world[bone.parentId];
+      const parentBone = boneMap.get(bone.parentId)!;
+
+      // Transform bone head through parent's world transform
+      const cos = Math.cos(parent.rotation);
+      const sin = Math.sin(parent.rotation);
+      const dx = bone.headX - parentBone.headX;
+      const dy = bone.headY - parentBone.headY;
+      const worldPivotX = parentBone.headX + dx * cos - dy * sin + parent.tx;
+      const worldPivotY = parentBone.headY + dx * sin + dy * cos + parent.ty;
+
+      world[bone.id] = {
+        rotation: parent.rotation + local.rotation,
+        tx: (worldPivotX - bone.headX) + local.translateX,
+        ty: (worldPivotY - bone.headY) + local.translateY,
+        pivotX: worldPivotX,
+        pivotY: worldPivotY,
+      };
+    }
+
+    // Enqueue children
+    for (const b of bones) {
+      if (b.parentId === bone.id && !processed.has(b.id)) {
+        queue.push(b);
+      }
+    }
+  }
+
+  return world;
+}
+
 /**
  * Deform mesh vertices based on bone transforms and weights.
- * Uses Linear Blend Skinning (LBS).
+ * Uses Linear Blend Skinning (LBS) with hierarchical transform propagation.
  */
 export function deformMesh(
   restPoints: [number, number][],
@@ -77,7 +151,8 @@ export function deformMesh(
   transforms: Record<string, BoneTransform>,
   weights: VertexWeights[]
 ): [number, number][] {
-  // Build bone origin map (head position as pivot)
+  const worldTf = computeWorldTransforms(bones, transforms);
+
   const boneMap = new Map<string, Bone>();
   for (const bone of bones) boneMap.set(bone.id, bone);
 
@@ -97,24 +172,20 @@ export function deformMesh(
     for (const [boneId, weight] of Object.entries(w)) {
       if (weight === 0) continue;
       const bone = boneMap.get(boneId);
-      const tf = transforms[boneId];
-      if (!bone || !tf) {
+      const wt = worldTf[boneId];
+      if (!bone || !wt) {
         outX += px * weight;
         outY += py * weight;
         continue;
       }
 
-      // Pivot is bone head
-      const cx = bone.headX;
-      const cy = bone.headY;
-
-      // Rotate around pivot, then translate
-      const cos = Math.cos(tf.rotation);
-      const sin = Math.sin(tf.rotation);
-      const dx = px - cx;
-      const dy = py - cy;
-      const rx = cx + dx * cos - dy * sin + tf.translateX;
-      const ry = cy + dx * sin + dy * cos + tf.translateY;
+      // Apply world transform: rotate around rest-pose bone head, then translate
+      const cos = Math.cos(wt.rotation);
+      const sin = Math.sin(wt.rotation);
+      const dx = px - bone.headX;
+      const dy = py - bone.headY;
+      const rx = bone.headX + dx * cos - dy * sin + wt.tx;
+      const ry = bone.headY + dx * sin + dy * cos + wt.ty;
 
       outX += rx * weight;
       outY += ry * weight;
