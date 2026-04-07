@@ -4,6 +4,7 @@ import type { AppMode, BindTool, Bone, BoneTransform, AnimationClip, Layer } fro
 import { drawBones, drawWeightOverlay, drawVertexWeights, findBoneAt, findBoneTailAt } from "./bones/BoneRenderer";
 import { autoBind, applyWeightPaint, setVertexWeight } from "./bones/autoBind";
 import { createClip, evaluateAnimation, deformMesh } from "./bones/animation";
+import BoneTree from "./components/BoneTree";
 import sampleLayer2 from "./assets/layer2.png";
 import sampleLayer3 from "./assets/layer3.png";
 import "./App.css";
@@ -512,35 +513,17 @@ function App() {
     }
   }
 
-  // --- Tree rendering ---
-  const renderBoneTree = (parentId: string | null, depth: number): React.ReactNode[] => {
-    const children = bones.filter(b => b.parentId === parentId);
-    const result: React.ReactNode[] = [];
-    for (const bone of children) {
-      result.push(
-        <div key={bone.id}
-          className={`tree-item tree-bone ${bone.id === selectedBoneId ? "selected" : ""}`}
-          style={{ paddingLeft: depth * 16 + 8 }}
-          onClick={() => { setSelectedBoneId(bone.id); setSelectedLayerId(null); }}>
-          <span className="tree-icon">◆</span> {bone.name}
-        </div>
-      );
-      // Layers attached to this bone
-      for (const layer of layers.filter(l => l.attachBoneId === bone.id)) {
-        result.push(
-          <div key={`layer-${layer.id}`}
-            className={`tree-item tree-layer ${layer.id === selectedLayerId ? "selected" : ""}`}
-            style={{ paddingLeft: (depth + 1) * 16 + 8 }}
-            onClick={() => setSelectedLayerId(layer.id)}>
-            <span className="tree-icon">▧</span> {layer.name}
-          </div>
-        );
-      }
-      // Recurse into children
-      result.push(...renderBoneTree(bone.id, depth + 1));
-    }
-    return result;
-  };
+  // --- Bone/Layer tree DnD handlers ---
+  const handleMoveBone = useCallback((boneId: string, newParentBoneId: string | null) => {
+    // Prevent circular reference
+    if (boneId === newParentBoneId) return;
+    setBones(prev => prev.map(b => b.id === boneId ? { ...b, parentId: newParentBoneId } : b));
+  }, []);
+
+  const handleMoveLayer = useCallback((layerId: string, newAttachBoneId: string | null) => {
+    setLayers(prev => prev.map(l => l.id === layerId ? { ...l, attachBoneId: newAttachBoneId } : l));
+    bumpRev();
+  }, [bumpRev]);
 
   // --- Weight editor ---
   const weightEditorRows = (() => {
@@ -764,17 +747,16 @@ function App() {
               <div className="side-panel">
                 <div className="bone-list">
                   <div className="panel-title">ツリー</div>
-                  {bones.length === 0 && layers.length === 0 && <div className="panel-empty">ボーンなし</div>}
-                  {renderBoneTree(null, 0)}
-                  {/* Unattached layers */}
-                  {layers.filter(l => !l.attachBoneId).map(layer => (
-                    <div key={layer.id}
-                      className={`tree-item tree-layer ${layer.id === selectedLayerId ? "selected" : ""}`}
-                      style={{ paddingLeft: 8 }}
-                      onClick={() => setSelectedLayerId(layer.id)}>
-                      <span className="tree-icon">▧</span> {layer.name}
-                    </div>
-                  ))}
+                  <BoneTree
+                    bones={bones}
+                    layers={layers}
+                    selectedBoneId={selectedBoneId}
+                    selectedLayerId={selectedLayerId}
+                    onSelectBone={setSelectedBoneId}
+                    onSelectLayer={setSelectedLayerId}
+                    onMoveBone={handleMoveBone}
+                    onMoveLayer={handleMoveLayer}
+                  />
                 </div>
                 {weightEditorRows}
               </div>

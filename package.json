@@ -12,15 +12,18 @@
   "dependencies": {
     "delaunator": "^5.1.0",
     "react": "^19.2.4",
+    "react-arborist": "^3.4.3",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@napi-rs/canvas": "^0.1.97",
     "@types/delaunator": "^5.0.3",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "ag-psd": "^30.1.0",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
