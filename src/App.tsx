@@ -756,7 +756,6 @@ function App() {
                       const rect = e.currentTarget.getBoundingClientRect();
                       const t = ((e.clientX - rect.left) / rect.width) * clip.duration;
                       const clickedTime = Math.max(0, Math.min(clip.duration, t));
-                      // Check if near an existing keyframe
                       const nearKf = clip.keyframes.findIndex(kf => Math.abs((kf.time / clip.duration) - (clickedTime / clip.duration)) < 0.02);
                       if (nearKf >= 0) {
                         setSelectedKeyframeIdx(nearKf);
@@ -764,11 +763,15 @@ function App() {
                         setSelectedBoneId(bone.id);
                         setIsPlaying(false);
                         setTimelinePopup(null);
-                      } else {
-                        // Show add popup
+                      } else if (bone.id === selectedBoneId) {
+                        // Show add popup only for selected bone's lane
                         setTimelinePopup({ boneId: bone.id, time: clickedTime, x: e.clientX, y: e.clientY });
-                        setSelectedBoneId(bone.id);
                         setIsPlaying(false);
+                      } else {
+                        setSelectedBoneId(bone.id);
+                        setCurrentTime(clickedTime);
+                        setIsPlaying(false);
+                        setTimelinePopup(null);
                       }
                     }}>
                     {/* Playhead line */}
