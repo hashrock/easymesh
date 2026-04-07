@@ -65,12 +65,13 @@ function App() {
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
   const getImage = useCallback((layer: Layer): HTMLImageElement | null => {
     let img = imageCache.current.get(layer.id);
-    if (img) return img;
+    if (img) return img.complete ? img : null;
     img = new Image();
+    img.onload = () => bumpRev();
     img.src = layer.imageSrc;
     imageCache.current.set(layer.id, img);
-    return img.complete ? img : null;
-  }, []);
+    return null;
+  }, [bumpRev]);
 
   // Derived: selected layer
   const selectedLayer = layers.find(l => l.id === selectedLayerId) ?? null;
@@ -91,19 +92,33 @@ function App() {
       { src: sampleLayer2, name: "レイヤー 2" },
       { src: sampleLayer3, name: "レイヤー 3" },
     ];
-    for (const sample of samples) {
+    // Load all images first, then process sequentially
+    let loaded = 0;
+    const images: { id: string; img: HTMLImageElement; idx: number }[] = [];
+    for (let si = 0; si < samples.length; si++) {
+      const sample = samples[si];
       const img = new Image();
       img.onload = () => {
         const id = genLayerId();
         imageCache.current.set(id, img);
-        const newLayer: Layer = {
+        setLayers(prev => [...prev, {
           id, name: sample.name, imageSrc: sample.src,
           mesh: null, weights: [], attachBoneId: null,
-          zOrder: samples.indexOf(sample), visible: true,
-        };
-        setLayers(prev => [...prev, newLayer]);
-        if (samples.indexOf(sample) === 0) setSelectedLayerId(id);
-        // Generate mesh
+          zOrder: si, visible: true,
+        }]);
+        if (si === 0) setSelectedLayerId(id);
+        images.push({ id, img, idx: si });
+        loaded++;
+        if (loaded === samples.length) processSampleQueue(images);
+      };
+      img.src = sample.src;
+    }
+
+    function processSampleQueue(queue: { id: string; img: HTMLImageElement; idx: number }[]) {
+      let i = 0;
+      function processNext() {
+        if (i >= queue.length) return;
+        const { id, img } = queue[i];
         const worker = workerRef.current;
         if (!worker) return;
         const spacing = meshDensity;
@@ -113,20 +128,20 @@ function App() {
         const ctx = offscreen.getContext("2d")!;
         ctx.drawImage(img, 0, 0);
         const imageData = ctx.getImageData(0, 0, img.width, img.height);
-        const reqId = ++requestIdRef.current;
         worker.onmessage = (ev: MessageEvent<WorkerOutput | null>) => {
-          if (reqId !== requestIdRef.current) return;
           if (ev.data) {
             setLayers(prev => prev.map(l => l.id === id ? { ...l, mesh: ev.data! } : l));
             bumpRev();
           }
+          i++;
+          processNext();
         };
         worker.postMessage({
           imageData: imageData.data, width: img.width, height: img.height,
           spacing, padding: pad, contourMode,
         } as WorkerInput);
-      };
-      img.src = sample.src;
+      }
+      processNext();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -417,17 +432,18 @@ function App() {
     for (const layer of sortedLayers) {
       if (!layer.visible) continue;
       const img = getImage(layer);
-      if (!img?.complete || !layer.mesh) continue;
+      if (!img?.complete) continue;
 
-      const isAnimating = appMode === "animate" && transforms && layer.weights.length > 0;
-      const deformed = isAnimating ? deformMesh(layer.mesh.points, bones, transforms, layer.weights) : null;
+      const mesh = layer.mesh;
+      const isAnimating = appMode === "animate" && transforms && mesh && layer.weights.length > 0;
+      const deformed = isAnimating ? deformMesh(mesh!.points, bones, transforms, layer.weights) : null;
 
-      if (showImage && deformed && layer.mesh) {
+      if (showImage && deformed && mesh) {
         ctx.save();
-        for (let i = 0; i < layer.mesh.triangles.length; i += 3) {
-          const a = layer.mesh.triangles[i], b = layer.mesh.triangles[i + 1], c = layer.mesh.triangles[i + 2];
+        for (let i = 0; i < mesh.triangles.length; i += 3) {
+          const a = mesh.triangles[i], b = mesh.triangles[i + 1], c = mesh.triangles[i + 2];
           drawTexturedTriangle(ctx, img,
-            layer.mesh.points[a], layer.mesh.points[b], layer.mesh.points[c],
+            mesh.points[a], mesh.points[b], mesh.points[c],
             deformed[a], deformed[b], deformed[c]
           );
         }
@@ -438,37 +454,38 @@ function App() {
         ctx.globalAlpha = 1;
       }
 
-      const displayPoints = deformed ?? layer.mesh.points;
+      if (!mesh) continue; // remaining drawing needs mesh
 
-      // Weight overlay for selected layer in bind mode
+      const displayPoints = deformed ?? mesh.points;
+
       if (appMode === "boneBind" && layer.id === selectedLayerId && selectedBoneId && layer.weights.length > 0) {
-        drawWeightOverlay(ctx, layer.mesh.points, layer.mesh.triangles, layer.weights, selectedBoneId);
+        drawWeightOverlay(ctx, mesh.points, mesh.triangles, layer.weights, selectedBoneId);
       }
 
       if (showMesh && displayPoints) {
         ctx.strokeStyle = layer.id === selectedLayerId ? "#00ccff" : "rgba(0,204,255,0.15)";
         ctx.lineWidth = 1;
-        for (let i = 0; i < layer.mesh.triangles.length; i += 3) {
+        for (let i = 0; i < mesh.triangles.length; i += 3) {
           ctx.beginPath();
-          ctx.moveTo(displayPoints[layer.mesh.triangles[i]][0], displayPoints[layer.mesh.triangles[i]][1]);
-          ctx.lineTo(displayPoints[layer.mesh.triangles[i + 1]][0], displayPoints[layer.mesh.triangles[i + 1]][1]);
-          ctx.lineTo(displayPoints[layer.mesh.triangles[i + 2]][0], displayPoints[layer.mesh.triangles[i + 2]][1]);
+          ctx.moveTo(displayPoints[mesh.triangles[i]][0], displayPoints[mesh.triangles[i]][1]);
+          ctx.lineTo(displayPoints[mesh.triangles[i + 1]][0], displayPoints[mesh.triangles[i + 1]][1]);
+          ctx.lineTo(displayPoints[mesh.triangles[i + 2]][0], displayPoints[mesh.triangles[i + 2]][1]);
           ctx.closePath(); ctx.stroke();
         }
       }
 
       if (appMode === "boneBind" && layer.id === selectedLayerId && selectedBoneId && layer.weights.length > 0) {
-        drawVertexWeights(ctx, layer.mesh.points, layer.weights, selectedBoneId, selectedVertices);
+        drawVertexWeights(ctx, mesh.points, layer.weights, selectedBoneId, selectedVertices);
       } else if (showPoints && displayPoints && layer.id === selectedLayerId && appMode !== "animate") {
         ctx.fillStyle = "#ff4444";
         for (const [x, y] of displayPoints) { ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill(); }
       }
 
-      if (layer.id === selectedLayerId && appMode === "mesh" && layer.mesh) {
+      if (layer.id === selectedLayerId && appMode === "mesh") {
         ctx.strokeStyle = "#ffcc00"; ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(layer.mesh.hull[0][0], layer.mesh.hull[0][1]);
-        for (let i = 1; i < layer.mesh.hull.length; i++) ctx.lineTo(layer.mesh.hull[i][0], layer.mesh.hull[i][1]);
+        ctx.moveTo(mesh.hull[0][0], mesh.hull[0][1]);
+        for (let i = 1; i < mesh.hull.length; i++) ctx.lineTo(mesh.hull[i][0], mesh.hull[i][1]);
         ctx.closePath(); ctx.stroke();
       }
     }
