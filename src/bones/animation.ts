@@ -1,23 +1,16 @@
-import type { Bone, BoneTransform, Keyframe, AnimationClip, VertexWeights } from "../types";
+import type { Bone, BoneTransform, BoneKeyframe, AnimationClip, VertexWeights } from "../types";
 
 const IDENTITY_TRANSFORM: BoneTransform = { rotation: 0, translateX: 0, translateY: 0 };
 
-/** Create a default keyframe with identity transforms for all bones */
-export function createKeyframe(time: number, bones: Bone[]): Keyframe {
-  const transforms: Record<string, BoneTransform> = {};
-  for (const bone of bones) {
-    transforms[bone.id] = { ...IDENTITY_TRANSFORM };
-  }
-  return { time, transforms };
-}
-
-/** Create a new empty animation clip */
+/** Create a new empty animation clip with per-bone tracks */
 export function createClip(name: string, duration: number, bones: Bone[]): AnimationClip {
-  return {
-    name,
-    duration,
-    keyframes: [createKeyframe(0, bones)],
-  };
+  const tracks: Record<string, BoneKeyframe[]> = {};
+  for (const bone of bones) {
+    tracks[bone.id] = [
+      { time: 0, transform: { ...IDENTITY_TRANSFORM } },
+    ];
+  }
+  return { name, duration, tracks };
 }
 
 /** Lerp between two transforms */
@@ -29,41 +22,36 @@ function lerpTransform(a: BoneTransform, b: BoneTransform, t: number): BoneTrans
   };
 }
 
+/** Evaluate a single bone's track at a given time */
+function evaluateTrack(track: BoneKeyframe[], time: number): BoneTransform {
+  if (track.length === 0) return { ...IDENTITY_TRANSFORM };
+  if (track.length === 1) return { ...track[0].transform };
+
+  // Before first keyframe
+  if (time <= track[0].time) return { ...track[0].transform };
+  // After last keyframe
+  if (time >= track[track.length - 1].time) return { ...track[track.length - 1].transform };
+
+  // Find surrounding keyframes
+  for (let i = 0; i < track.length - 1; i++) {
+    if (track[i].time <= time && track[i + 1].time >= time) {
+      const alpha = (time - track[i].time) / (track[i + 1].time - track[i].time);
+      return lerpTransform(track[i].transform, track[i + 1].transform, alpha);
+    }
+  }
+  return { ...track[track.length - 1].transform };
+}
+
 /** Evaluate animation at a given time, returning interpolated transforms per bone */
 export function evaluateAnimation(
   clip: AnimationClip,
   time: number
 ): Record<string, BoneTransform> {
-  const kfs = clip.keyframes;
-  if (kfs.length === 0) return {};
-  if (kfs.length === 1) return { ...kfs[0].transforms };
-
-  // Clamp and find surrounding keyframes
   const t = Math.max(0, Math.min(clip.duration, time));
-
-  // Find the two keyframes surrounding t
-  let prev = kfs[0];
-  let next = kfs[kfs.length - 1];
-  for (let i = 0; i < kfs.length - 1; i++) {
-    if (kfs[i].time <= t && kfs[i + 1].time >= t) {
-      prev = kfs[i];
-      next = kfs[i + 1];
-      break;
-    }
-  }
-
-  if (prev.time === next.time) return { ...prev.transforms };
-
-  const alpha = (t - prev.time) / (next.time - prev.time);
   const result: Record<string, BoneTransform> = {};
-
-  const allBoneIds = new Set([...Object.keys(prev.transforms), ...Object.keys(next.transforms)]);
-  for (const id of allBoneIds) {
-    const a = prev.transforms[id] ?? IDENTITY_TRANSFORM;
-    const b = next.transforms[id] ?? IDENTITY_TRANSFORM;
-    result[id] = lerpTransform(a, b, alpha);
+  for (const [boneId, track] of Object.entries(clip.tracks)) {
+    result[boneId] = evaluateTrack(track, t);
   }
-
   return result;
 }
 

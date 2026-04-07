@@ -29,14 +29,15 @@ export interface BoneTransform {
   translateY: number;
 }
 
-/** A keyframe stores transforms for all bones at a specific time */
-export interface Keyframe {
+/** Per-bone keyframe */
+export interface BoneKeyframe {
   time: number; // seconds
-  transforms: Record<string, BoneTransform>; // boneId -> transform
+  transform: BoneTransform;
 }
 
+/** Animation clip with per-bone keyframe tracks */
 export interface AnimationClip {
   name: string;
   duration: number; // seconds
-  keyframes: Keyframe[];
+  tracks: Record<string, BoneKeyframe[]>; // boneId -> sorted keyframes
 }

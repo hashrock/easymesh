@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkerInput, WorkerOutput } from "./meshWorker";
-import type { AppMode, BindTool, Bone, BoneTransform, AnimationClip, Keyframe, MeshData, VertexWeights } from "./types";
+import type { AppMode, BindTool, Bone, BoneTransform, AnimationClip, MeshData, VertexWeights } from "./types";
 import { drawBones, drawWeightOverlay, drawVertexWeights, findBoneAt, findBoneTailAt } from "./bones/BoneRenderer";
 import { autoBind, applyWeightPaint, setVertexWeight } from "./bones/autoBind";
-import { createClip, createKeyframe, evaluateAnimation, deformMesh } from "./bones/animation";
+import { createClip, evaluateAnimation, deformMesh } from "./bones/animation";
 import "./App.css";
 
 let nextBoneId = 1;
@@ -41,7 +41,7 @@ function App() {
   const [clip, setClip] = useState<AnimationClip | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [selectedKeyframeIdx, setSelectedKeyframeIdx] = useState(0);
+  const [selectedKfIdx, setSelectedKfIdx] = useState<number | null>(null); // index in selected bone's track
   const [timelinePopup, setTimelinePopup] = useState<{ boneId: string; time: number; x: number; y: number } | null>(null);
   const animFrameRef = useRef(0);
   const lastTimeRef = useRef(0);
@@ -272,63 +272,61 @@ function App() {
   // --- Animation helpers ---
   const initAnimation = useCallback(() => {
     if (bones.length === 0) return;
-    const newClip = createClip("Animation 1", 2.0, bones);
-    // Add end keyframe
-    newClip.keyframes.push(createKeyframe(2.0, bones));
-    setClip(newClip);
+    setClip(createClip("Animation 1", 2.0, bones));
     setCurrentTime(0);
-    setSelectedKeyframeIdx(0);
+    setSelectedKfIdx(0);
   }, [bones]);
 
-  const addKeyframeAt = useCallback((time: number) => {
-    if (!clip) return;
-    const existing = clip.keyframes.findIndex(kf => Math.abs(kf.time - time) < 0.01);
-    if (existing >= 0) {
-      setSelectedKeyframeIdx(existing);
-      setCurrentTime(time);
-      return;
-    }
-    const newKf = createKeyframe(time, bones);
-    const currentTransforms = evaluateAnimation(clip, time);
-    for (const [id, tf] of Object.entries(currentTransforms)) {
-      newKf.transforms[id] = { ...tf };
-    }
-    const newKeyframes = [...clip.keyframes, newKf].sort((a, b) => a.time - b.time);
-    setClip({ ...clip, keyframes: newKeyframes });
-    const idx = newKeyframes.findIndex(kf => Math.abs(kf.time - time) < 0.01);
-    setSelectedKeyframeIdx(idx);
-    setCurrentTime(time);
-    setClipRev(r => r + 1);
-  }, [clip, bones]);
-
-  const updateBoneTransformInKeyframe = useCallback((boneId: string, field: keyof BoneTransform, value: number) => {
+  /** Add a keyframe for the selected bone at a given time */
+  const addKeyframeAt = useCallback((time: number, boneId: string) => {
     if (!clip) return;
     setClip(prev => {
       if (!prev) return prev;
-      const newKeyframes = prev.keyframes.map((kf, i) => {
-        if (i !== selectedKeyframeIdx) return kf;
-        return {
-          ...kf,
-          transforms: {
-            ...kf.transforms,
-            [boneId]: {
-              ...(kf.transforms[boneId] ?? { rotation: 0, translateX: 0, translateY: 0 }),
-              [field]: value,
-            },
-          },
-        };
-      });
-      return { ...prev, keyframes: newKeyframes };
+      const track = prev.tracks[boneId] ?? [];
+      const existing = track.findIndex(kf => Math.abs(kf.time - time) < 0.01);
+      if (existing >= 0) {
+        setSelectedKfIdx(existing);
+        setCurrentTime(time);
+        return prev;
+      }
+      // Interpolate current value
+      const currentTransforms = evaluateAnimation(prev, time);
+      const tf = currentTransforms[boneId] ?? { rotation: 0, translateX: 0, translateY: 0 };
+      const newTrack = [...track, { time, transform: { ...tf } }].sort((a, b) => a.time - b.time);
+      const idx = newTrack.findIndex(kf => Math.abs(kf.time - time) < 0.01);
+      setSelectedKfIdx(idx);
+      setCurrentTime(time);
+      return { ...prev, tracks: { ...prev.tracks, [boneId]: newTrack } };
     });
     setClipRev(r => r + 1);
-  }, [clip, selectedKeyframeIdx]);
+  }, [clip]);
 
+  /** Update a transform field on the selected bone's selected keyframe */
+  const updateBoneTransformInKeyframe = useCallback((boneId: string, field: keyof BoneTransform, value: number) => {
+    if (!clip || selectedKfIdx == null) return;
+    setClip(prev => {
+      if (!prev) return prev;
+      const track = prev.tracks[boneId];
+      if (!track || !track[selectedKfIdx]) return prev;
+      const newTrack = track.map((kf, i) => {
+        if (i !== selectedKfIdx) return kf;
+        return { ...kf, transform: { ...kf.transform, [field]: value } };
+      });
+      return { ...prev, tracks: { ...prev.tracks, [boneId]: newTrack } };
+    });
+    setClipRev(r => r + 1);
+  }, [clip, selectedKfIdx]);
+
+  /** Delete the selected keyframe from the selected bone's track */
   const deleteKeyframe = useCallback(() => {
-    if (!clip || clip.keyframes.length <= 1) return;
-    const newKeyframes = clip.keyframes.filter((_, i) => i !== selectedKeyframeIdx);
-    setClip({ ...clip, keyframes: newKeyframes });
-    setSelectedKeyframeIdx(Math.min(selectedKeyframeIdx, newKeyframes.length - 1));
-  }, [clip, selectedKeyframeIdx]);
+    if (!clip || !selectedBoneId || selectedKfIdx == null) return;
+    const track = clip.tracks[selectedBoneId];
+    if (!track || track.length <= 1) return;
+    const newTrack = track.filter((_, i) => i !== selectedKfIdx);
+    setClip({ ...clip, tracks: { ...clip.tracks, [selectedBoneId]: newTrack } });
+    setSelectedKfIdx(Math.min(selectedKfIdx, newTrack.length - 1));
+    setClipRev(r => r + 1);
+  }, [clip, selectedBoneId, selectedKfIdx]);
 
   // --- Playback loop ---
   useEffect(() => {
@@ -495,7 +493,8 @@ function App() {
   })();
 
   // --- Animation keyframe editor panel ---
-  const currentKf: Keyframe | null = clip ? clip.keyframes[selectedKeyframeIdx] ?? null : null;
+  const selectedTrack = clip && selectedBoneId ? clip.tracks[selectedBoneId] ?? [] : [];
+  const currentKf = selectedKfIdx != null ? selectedTrack[selectedKfIdx] ?? null : null;
   const animEditorPanel = (() => {
     if (appMode !== "animate" || !clip) return null;
     return (
@@ -506,7 +505,7 @@ function App() {
               {bones.find(b => b.id === selectedBoneId)?.name ?? "?"} @ {currentKf.time.toFixed(2)}s
             </div>
             {(() => {
-              const tf = currentKf.transforms[selectedBoneId] ?? { rotation: 0, translateX: 0, translateY: 0 };
+              const tf = currentKf.transform;
               return (
                 <>
                   <div className="weight-row">
@@ -537,13 +536,18 @@ function App() {
               );
             })()}
             <div className="anim-actions" style={{ marginTop: 8 }}>
-              <button onClick={deleteKeyframe} disabled={clip.keyframes.length <= 1}>このキーフレームを削除</button>
+              <button onClick={deleteKeyframe} disabled={selectedTrack.length <= 1}>このキーフレームを削除</button>
             </div>
+          </div>
+        )}
+        {selectedBoneId && !currentKf && (
+          <div className="bone-list">
+            <div className="panel-empty">タイムラインでキーフレームを選択してください</div>
           </div>
         )}
         {!selectedBoneId && (
           <div className="bone-list">
-            <div className="panel-empty">ボーンを選択してください（キャンバスまたはタイムラインをクリック）</div>
+            <div className="panel-empty">ボーンを選択してください</div>
           </div>
         )}
       </div>
@@ -756,37 +760,36 @@ function App() {
                       const rect = e.currentTarget.getBoundingClientRect();
                       const t = ((e.clientX - rect.left) / rect.width) * clip.duration;
                       const clickedTime = Math.max(0, Math.min(clip.duration, t));
-                      const nearKf = clip.keyframes.findIndex(kf => Math.abs((kf.time / clip.duration) - (clickedTime / clip.duration)) < 0.02);
+                      const track = clip.tracks[bone.id] ?? [];
+                      const nearKf = track.findIndex(kf => Math.abs((kf.time / clip.duration) - (clickedTime / clip.duration)) < 0.02);
                       if (nearKf >= 0) {
-                        setSelectedKeyframeIdx(nearKf);
-                        setCurrentTime(clip.keyframes[nearKf].time);
+                        setSelectedKfIdx(nearKf);
+                        setCurrentTime(track[nearKf].time);
                         setSelectedBoneId(bone.id);
                         setIsPlaying(false);
                         setTimelinePopup(null);
                       } else if (bone.id === selectedBoneId) {
-                        // Show add popup only for selected bone's lane
                         setTimelinePopup({ boneId: bone.id, time: clickedTime, x: e.clientX, y: e.clientY });
                         setIsPlaying(false);
                       } else {
                         setSelectedBoneId(bone.id);
+                        setSelectedKfIdx(null);
                         setCurrentTime(clickedTime);
                         setIsPlaying(false);
                         setTimelinePopup(null);
                       }
                     }}>
-                    {/* Playhead line */}
                     <div className="timeline-playhead" style={{ left: `${(currentTime / clip.duration) * 100}%` }} />
-                    {/* Keyframe dots */}
-                    {clip.keyframes.map((kf, i) => {
-                      const hasBoneData = kf.transforms[bone.id] &&
-                        (kf.transforms[bone.id].rotation !== 0 || kf.transforms[bone.id].translateX !== 0 || kf.transforms[bone.id].translateY !== 0);
+                    {(clip.tracks[bone.id] ?? []).map((kf, i) => {
+                      const hasData = kf.transform.rotation !== 0 || kf.transform.translateX !== 0 || kf.transform.translateY !== 0;
+                      const isSelected = bone.id === selectedBoneId && i === selectedKfIdx;
                       return (
                         <div key={i}
-                          className={`timeline-kf ${i === selectedKeyframeIdx ? "selected" : ""} ${hasBoneData ? "has-data" : ""}`}
+                          className={`timeline-kf ${isSelected ? "selected" : ""} ${hasData ? "has-data" : ""}`}
                           style={{ left: `${(kf.time / clip.duration) * 100}%` }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedKeyframeIdx(i);
+                            setSelectedKfIdx(i);
                             setCurrentTime(kf.time);
                             setSelectedBoneId(bone.id);
                             setIsPlaying(false);
@@ -802,7 +805,7 @@ function App() {
               {timelinePopup && (
                 <div className="timeline-popup" style={{ left: timelinePopup.x, top: timelinePopup.y }}>
                   <button onClick={() => {
-                    addKeyframeAt(timelinePopup.time);
+                    addKeyframeAt(timelinePopup.time, timelinePopup.boneId);
                     setTimelinePopup(null);
                   }}>
                     {timelinePopup.time.toFixed(2)}s にキーフレーム追加
