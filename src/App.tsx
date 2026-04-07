@@ -21,6 +21,9 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
+  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRequestRef = useRef<(() => void) | null>(null);
+  const workerBusyRef = useRef(false);
 
   // Initialize worker
   useEffect(() => {
@@ -32,16 +35,11 @@ function App() {
     return () => worker.terminate();
   }, []);
 
-  const processImage = useCallback(
-    (img: HTMLImageElement, density?: number, pad?: number, mode?: "concave" | "convex") => {
+  const dispatchToWorker = useCallback(
+    (img: HTMLImageElement, spacing: number, padRadius: number, cMode: "concave" | "convex") => {
       const worker = workerRef.current;
       if (!worker) return;
 
-      const spacing = density ?? meshDensity;
-      const padRadius = pad ?? padding;
-      const cMode = mode ?? contourMode;
-
-      // Extract pixel data on main thread (needs canvas)
       const offscreen = document.createElement("canvas");
       offscreen.width = img.width;
       offscreen.height = img.height;
@@ -51,6 +49,7 @@ function App() {
 
       const id = ++requestIdRef.current;
       setProcessing(true);
+      workerBusyRef.current = true;
 
       const input: WorkerInput = {
         imageData: imageData.data,
@@ -62,17 +61,49 @@ function App() {
       };
 
       worker.onmessage = (e: MessageEvent<WorkerOutput | null>) => {
-        // Ignore stale responses
+        workerBusyRef.current = false;
         if (id !== requestIdRef.current) return;
         setProcessing(false);
         if (e.data) {
           setMeshData(e.data);
         }
+        // If a request arrived while busy, fire it now
+        const pending = pendingRequestRef.current;
+        if (pending) {
+          pendingRequestRef.current = null;
+          pending();
+        }
       };
 
       worker.postMessage(input);
     },
-    [meshDensity, padding, contourMode]
+    []
+  );
+
+  const processImage = useCallback(
+    (img: HTMLImageElement, density?: number, pad?: number, mode?: "concave" | "convex") => {
+      const spacing = density ?? meshDensity;
+      const padRadius = pad ?? padding;
+      const cMode = mode ?? contourMode;
+
+      const fire = () => dispatchToWorker(img, spacing, padRadius, cMode);
+
+      // If worker is busy, just store the latest request (replaces previous pending)
+      if (workerBusyRef.current) {
+        pendingRequestRef.current = fire;
+        return;
+      }
+
+      // Throttle: debounce rapid calls by 50ms
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current);
+      }
+      throttleTimerRef.current = setTimeout(() => {
+        throttleTimerRef.current = null;
+        fire();
+      }, 50);
+    },
+    [meshDensity, padding, contourMode, dispatchToWorker]
   );
 
   const handleDrop = useCallback(
