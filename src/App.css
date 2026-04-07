@@ -1,26 +1,22 @@
 .app {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 16px;
   font-family: system-ui, -apple-system, sans-serif;
+  outline: none;
 }
 
 header {
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 20px;
 }
 
-header p {
-  margin: 4px 0 0;
-  color: #888;
-  font-size: 14px;
-}
-
+/* Drop zone */
 .dropzone {
   border: 3px dashed #555;
   border-radius: 16px;
@@ -29,50 +25,55 @@ header p {
   cursor: pointer;
   transition: border-color 0.2s;
 }
+.dropzone:hover { border-color: #00ccff; }
+.dropzone-content { color: #888; }
+.dropzone-icon { display: block; font-size: 48px; margin-bottom: 8px; color: #555; }
 
-.dropzone:hover {
-  border-color: #00ccff;
-}
-
-.dropzone-content {
-  color: #888;
-}
-
-.dropzone-icon {
-  display: block;
-  font-size: 48px;
-  margin-bottom: 8px;
-  color: #555;
-}
-
+/* Workspace */
 .workspace {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
+/* Mode tabs */
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+}
+.mode-tabs button {
+  padding: 6px 16px;
+  background: #222;
+  color: #888;
+  border: 1px solid #333;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s, color 0.15s;
+}
+.mode-tabs button:hover { background: #2a2a2a; color: #ccc; }
+.mode-tabs button.active { background: #1a1a1a; color: #fff; border-color: #555; }
+.mode-tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Toolbar */
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
   padding: 8px 12px;
   background: #1a1a1a;
-  border-radius: 8px;
+  border-radius: 0 8px 8px 8px;
   font-size: 13px;
 }
-
 .toolbar label {
   display: flex;
   align-items: center;
   gap: 4px;
   white-space: nowrap;
 }
-
-.toolbar input[type="range"] {
-  width: 120px;
-}
-
+.toolbar input[type="range"] { width: 100px; }
 .toolbar select {
   padding: 4px 8px;
   background: #333;
@@ -82,9 +83,7 @@ header p {
   font-size: 13px;
   cursor: pointer;
 }
-
 .toolbar button {
-  margin-left: auto;
   padding: 4px 12px;
   background: #333;
   color: #fff;
@@ -93,9 +92,30 @@ header p {
   cursor: pointer;
   font-size: 13px;
 }
+.toolbar button:hover { background: #444; }
+.toolbar-hint { color: #888; font-size: 12px; }
 
-.toolbar button:hover {
-  background: #444;
+/* Bind tool buttons */
+.bind-tools {
+  display: flex;
+  gap: 2px;
+}
+.bind-tools button {
+  margin: 0;
+  border-radius: 4px;
+  padding: 4px 10px;
+}
+.bind-tools button.active {
+  background: #00ccff;
+  color: #000;
+  border-color: #00ccff;
+}
+.auto-bind-btn {
+  background: #2a6a2a !important;
+  border-color: #3a8a3a !important;
+}
+.auto-bind-btn:hover {
+  background: #3a8a3a !important;
 }
 
 .processing {
@@ -103,28 +123,106 @@ header p {
   font-size: 12px;
   animation: blink 1s ease-in-out infinite;
 }
-
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
 
+/* Main area: canvas + side panel */
+.main-area {
+  display: flex;
+  gap: 8px;
+}
+
 .canvas-container {
+  flex: 1;
   background: #111;
   border-radius: 8px;
   overflow: auto;
   display: flex;
   justify-content: center;
-  padding: 20px;
+  padding: 12px;
   min-height: 300px;
 }
-
 .canvas-container canvas {
   max-width: 100%;
   height: auto;
   image-rendering: auto;
 }
 
+/* Side panel */
+.side-panel {
+  width: 200px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.panel-title {
+  font-size: 12px;
+  font-weight: bold;
+  color: #aaa;
+  padding: 4px 0;
+  border-bottom: 1px solid #333;
+}
+.panel-empty {
+  font-size: 12px;
+  color: #666;
+  padding: 8px 0;
+}
+
+/* Bone list */
+.bone-list {
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 8px;
+}
+.bone-item {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #ccc;
+  transition: background 0.1s;
+}
+.bone-item:hover { background: #2a2a2a; }
+.bone-item.selected { background: #004466; color: #fff; }
+.bone-parent { color: #666; font-size: 11px; }
+
+/* Weight editor */
+.weight-editor {
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 8px;
+}
+.weight-editor-title {
+  font-size: 12px;
+  font-weight: bold;
+  color: #aaa;
+  padding: 0 0 6px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 6px;
+}
+.weight-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.weight-bone-name {
+  width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #888;
+  cursor: pointer;
+}
+.weight-bone-name.active { color: #00ccff; font-weight: bold; }
+.weight-row input[type="range"] { flex: 1; width: auto; }
+.weight-value { width: 32px; text-align: right; color: #ccc; font-variant-numeric: tabular-nums; }
+
+/* Stats */
 .stats {
   text-align: center;
   font-size: 13px;
