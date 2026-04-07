@@ -18,8 +18,8 @@ function App() {
   const [contourMode, setContourMode] = useState<"concave" | "convex">("concave");
   const [processing, setProcessing] = useState(false);
   const [showImage, setShowImage] = useState(true);
-  const [showMesh, setShowMesh] = useState(true);
-  const [showPoints, setShowPoints] = useState(true);
+  const [showMesh, setShowMesh] = useState(false);
+  const [showPoints, setShowPoints] = useState(false);
 
   // --- Mode state ---
   const [appMode, setAppMode] = useState<AppMode>("mesh");
