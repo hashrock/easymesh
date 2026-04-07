@@ -811,13 +811,70 @@ function App() {
                         <div key={i}
                           className={`timeline-kf ${isSelected ? "selected" : ""} ${hasData ? "has-data" : ""}`}
                           style={{ left: `${(kf.time / clip.duration) * 100}%` }}
-                          onClick={(e) => {
+                          onMouseDown={(e) => {
                             e.stopPropagation();
+                            const isDuplicate = e.metaKey || e.ctrlKey;
+                            const trackEl = e.currentTarget.parentElement!;
+                            const boneId = bone.id;
+                            const startX = e.clientX;
+                            let didDrag = false;
+
                             setSelectedKfIdx(i);
-                            setCurrentTime(kf.time);
-                            setSelectedBoneId(bone.id);
+                            setSelectedBoneId(boneId);
                             setIsPlaying(false);
                             setAddKfMarker(null);
+
+                            const onMove = (ev: MouseEvent) => {
+                              if (Math.abs(ev.clientX - startX) > 3) didDrag = true;
+                              if (!didDrag) return;
+                              const rect = trackEl.getBoundingClientRect();
+                              const newTime = Math.max(0, Math.min(clip.duration, ((ev.clientX - rect.left) / rect.width) * clip.duration));
+                              setCurrentTime(newTime);
+                              setClip(prev => {
+                                if (!prev) return prev;
+                                const track = prev.tracks[boneId];
+                                if (!track) return prev;
+                                const newTrack = track.map((k, j) => j === i ? { ...k, time: newTime } : k);
+                                return { ...prev, tracks: { ...prev.tracks, [boneId]: newTrack } };
+                              });
+                              setClipRev(r => r + 1);
+                            };
+
+                            const onUp = (ev: MouseEvent) => {
+                              window.removeEventListener("mousemove", onMove);
+                              window.removeEventListener("mouseup", onUp);
+                              if (!didDrag) {
+                                setCurrentTime(kf.time);
+                                return;
+                              }
+                              // Sort track and update selectedKfIdx
+                              setClip(prev => {
+                                if (!prev) return prev;
+                                const track = prev.tracks[boneId];
+                                if (!track) return prev;
+                                const rect = trackEl.getBoundingClientRect();
+                                const finalTime = Math.max(0, Math.min(prev.duration, ((ev.clientX - rect.left) / rect.width) * prev.duration));
+
+                                if (isDuplicate) {
+                                  // Duplicate: keep original, add copy at new position
+                                  const copy = { time: finalTime, transform: { ...kf.transform } };
+                                  const newTrack = [...track.map((k, j) => j === i ? { ...k, time: kf.time } : k), copy].sort((a, b) => a.time - b.time);
+                                  const newIdx = newTrack.findIndex(k => Math.abs(k.time - finalTime) < 0.001);
+                                  setSelectedKfIdx(newIdx);
+                                  return { ...prev, tracks: { ...prev.tracks, [boneId]: newTrack } };
+                                } else {
+                                  // Move: sort after drag
+                                  const sorted = [...track].sort((a, b) => a.time - b.time);
+                                  const newIdx = sorted.findIndex(k => Math.abs(k.time - finalTime) < 0.001);
+                                  setSelectedKfIdx(newIdx >= 0 ? newIdx : 0);
+                                  return { ...prev, tracks: { ...prev.tracks, [boneId]: sorted } };
+                                }
+                              });
+                              setClipRev(r => r + 1);
+                            };
+
+                            window.addEventListener("mousemove", onMove);
+                            window.addEventListener("mouseup", onUp);
                           }}
                         />
                       );
