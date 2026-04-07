@@ -196,24 +196,25 @@ function isTriangleInMask(
   p1: [number, number], p2: [number, number], p3: [number, number],
   mask: Uint8Array, w: number, h: number
 ): boolean {
+  // Check centroid – must be inside
   const cx = (p1[0] + p2[0] + p3[0]) / 3;
   const cy = (p1[1] + p2[1] + p3[1]) / 3;
   const ix = Math.round(cx);
   const iy = Math.round(cy);
   if (ix < 0 || ix >= w || iy < 0 || iy >= h) return false;
   if (mask[iy * w + ix] === 0) return false;
-  const midpoints: [number, number][] = [
-    [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2],
-    [(p2[0] + p3[0]) / 2, (p2[1] + p3[1]) / 2],
-    [(p3[0] + p1[0]) / 2, (p3[1] + p1[1]) / 2],
-  ];
-  for (const [mx, my] of midpoints) {
-    const mix = Math.round(mx);
-    const miy = Math.round(my);
-    if (mix < 0 || mix >= w || miy < 0 || miy >= h) return false;
-    if (mask[miy * w + mix] === 0) return false;
+
+  // At least 2 of 3 vertices should be inside the mask.
+  // This allows edge triangles where one vertex sits just outside.
+  let insideCount = 0;
+  for (const [px, py] of [p1, p2, p3]) {
+    const vx = Math.round(px);
+    const vy = Math.round(py);
+    if (vx >= 0 && vx < w && vy >= 0 && vy < h && mask[vy * w + vx] === 1) {
+      insideCount++;
+    }
   }
-  return true;
+  return insideCount >= 2;
 }
 
 function samplePolygonEdges(
