@@ -134,23 +134,27 @@ function App() {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => { setImage(img); processImage(img); };
+      img.onload = () => {
+        setImage(img);
+        const pad = autoPadding(meshDensity);
+        setPadding(pad);
+        processImage(img, undefined, pad);
+      };
       img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
-  }, [processImage]);
+  }, [processImage, meshDensity]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); }, []);
 
   // --- Mesh param handlers ---
+  const autoPadding = (density: number) => Math.min(30, Math.ceil(density * 0.5) + 2);
+
   const handleDensityChange = useCallback((val: number) => {
     setMeshDensity(val);
-    if (image) processImage(image, val, undefined);
-  }, [image, processImage]);
-
-  const handlePaddingChange = useCallback((val: number) => {
-    setPadding(val);
-    if (image) processImage(image, undefined, val);
+    const pad = autoPadding(val);
+    setPadding(pad);
+    if (image) processImage(image, val, pad);
   }, [image, processImage]);
 
   const handleContourModeChange = useCallback((mode: "concave" | "convex") => {
@@ -592,16 +596,6 @@ function App() {
                     onChange={(e) => handleDensityChange(Number(e.target.value))} />
                   <span>{meshDensity}px</span>
                 </label>
-                <label>
-                  パディング:
-                  <input type="range" min={0} max={30} value={padding}
-                    onChange={(e) => handlePaddingChange(Number(e.target.value))} />
-                  <span>{padding}px</span>
-                </label>
-                <button onClick={() => {
-                  const auto = Math.ceil(meshDensity * 0.5) + 2;
-                  handlePaddingChange(Math.min(30, auto));
-                }}>自動</button>
                 <select value={contourMode}
                   onChange={(e) => handleContourModeChange(e.target.value as "concave" | "convex")}>
                   <option value="concave">輪郭追従</option>
