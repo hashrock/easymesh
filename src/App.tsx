@@ -264,11 +264,6 @@ function App() {
   }, [appMode, selectedBoneId]);
 
   // --- Auto bind ---
-  const handleAutoBind = useCallback(() => {
-    if (!meshData || bones.length === 0) return;
-    const weights = autoBind(meshData.points, bones);
-    updateWeights(weights);
-  }, [meshData, bones, updateWeights]);
 
   // --- Animation helpers ---
   const initAnimation = useCallback(() => {
