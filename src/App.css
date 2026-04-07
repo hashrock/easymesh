@@ -98,6 +98,17 @@ header p {
   background: #444;
 }
 
+.processing {
+  color: #ffcc00;
+  font-size: 12px;
+  animation: blink 1s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .canvas-container {
   background: #111;
   border-radius: 8px;
