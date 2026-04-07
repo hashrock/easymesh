@@ -722,12 +722,20 @@ function App() {
               <div className="timeline-row">
                 <div className="timeline-label timeline-ruler-label">時間</div>
                 <div className="timeline-track timeline-ruler"
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const t = ((e.clientX - rect.left) / rect.width) * clip.duration;
-                    setCurrentTime(Math.max(0, Math.min(clip.duration, t)));
+                  onMouseDown={(e) => {
+                    const track = e.currentTarget;
+                    const scrub = (ev: MouseEvent) => {
+                      const rect = track.getBoundingClientRect();
+                      const t = ((ev.clientX - rect.left) / rect.width) * clip.duration;
+                      setCurrentTime(Math.max(0, Math.min(clip.duration, t)));
+                    };
+                    scrub(e.nativeEvent);
                     setIsPlaying(false);
                     setTimelinePopup(null);
+                    const onMove = (ev: MouseEvent) => scrub(ev);
+                    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+                    window.addEventListener("mousemove", onMove);
+                    window.addEventListener("mouseup", onUp);
                   }}>
                   <div className="timeline-playhead" style={{ left: `${(currentTime / clip.duration) * 100}%` }} />
                   {/* Time ticks */}
