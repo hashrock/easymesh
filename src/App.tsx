@@ -16,6 +16,43 @@ function getAlphaMask(
   return mask;
 }
 
+/** Dilate binary mask by radius pixels (Euclidean distance) */
+function dilateMask(
+  mask: Uint8Array,
+  w: number,
+  h: number,
+  radius: number
+): Uint8Array {
+  if (radius <= 0) return mask;
+  const out = new Uint8Array(w * h);
+  const r = Math.ceil(radius);
+  const r2 = radius * radius;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (mask[y * w + x] === 1) {
+        out[y * w + x] = 1;
+        continue;
+      }
+      // Check if any opaque pixel is within radius
+      let found = false;
+      for (let dy = -r; dy <= r && !found; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= h) continue;
+        for (let dx = -r; dx <= r && !found; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= w) continue;
+          if (dx * dx + dy * dy <= r2 && mask[ny * w + nx] === 1) {
+            found = true;
+          }
+        }
+      }
+      if (found) out[y * w + x] = 1;
+    }
+  }
+  return out;
+}
+
 /**
  * Moore neighborhood contour tracing.
  * Traces the outer boundary of the largest connected opaque region,
@@ -245,14 +282,16 @@ function App() {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [meshData, setMeshData] = useState<MeshData | null>(null);
   const [meshDensity, setMeshDensity] = useState(30);
+  const [padding, setPadding] = useState(0);
   const [showImage, setShowImage] = useState(true);
   const [showMesh, setShowMesh] = useState(true);
   const [showPoints, setShowPoints] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const processImage = useCallback(
-    (img: HTMLImageElement, density?: number) => {
+    (img: HTMLImageElement, density?: number, pad?: number) => {
       const spacing = density ?? meshDensity;
+      const padRadius = pad ?? padding;
 
       // Extract alpha mask
       const offscreen = document.createElement("canvas");
@@ -261,7 +300,10 @@ function App() {
       const ctx = offscreen.getContext("2d")!;
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
-      const mask = getAlphaMask(imageData, 10);
+      const baseMask = getAlphaMask(imageData, 10);
+
+      // Dilate mask if padding > 0
+      const mask = padRadius > 0 ? dilateMask(baseMask, img.width, img.height, padRadius) : baseMask;
 
       // Trace actual contour using Moore neighborhood
       const rawContour = mooreTrace(mask, img.width, img.height);
@@ -310,7 +352,7 @@ function App() {
         hull: simplified,
       });
     },
-    [meshDensity]
+    [meshDensity, padding]
   );
 
   const handleDrop = useCallback(
@@ -340,7 +382,15 @@ function App() {
   const handleDensityChange = useCallback(
     (val: number) => {
       setMeshDensity(val);
-      if (image) processImage(image, val);
+      if (image) processImage(image, val, undefined);
+    },
+    [image, processImage]
+  );
+
+  const handlePaddingChange = useCallback(
+    (val: number) => {
+      setPadding(val);
+      if (image) processImage(image, undefined, val);
     },
     [image, processImage]
   );
@@ -441,6 +491,17 @@ function App() {
                 onChange={(e) => handleDensityChange(Number(e.target.value))}
               />
               <span>{meshDensity}px</span>
+            </label>
+            <label>
+              パディング:
+              <input
+                type="range"
+                min={0}
+                max={30}
+                value={padding}
+                onChange={(e) => handlePaddingChange(Number(e.target.value))}
+              />
+              <span>{padding}px</span>
             </label>
             <label>
               <input
