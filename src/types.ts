@@ -41,3 +41,22 @@ export interface AnimationClip {
   duration: number; // seconds
   tracks: Record<string, BoneKeyframe[]>; // boneId -> sorted keyframes
 }
+
+// --- Layer / Project ---
+
+export interface Layer {
+  id: string;
+  name: string;
+  imageSrc: string;          // data URL
+  mesh: MeshData | null;
+  weights: VertexWeights[];
+  attachBoneId: string | null; // which bone this layer follows
+  zOrder: number;
+  visible: boolean;
+}
+
+export interface Project {
+  bones: Bone[];             // single forest (multiple roots allowed)
+  layers: Layer[];
+  animation: AnimationClip | null;
+}
