@@ -120,7 +120,7 @@ function weightToColor(w: number): string {
   const r = w < 0.5 ? 0 : Math.round(255 * (w - 0.5) * 2);
   const g = w < 0.5 ? Math.round(255 * w * 2) : Math.round(255 * (1 - w) * 2);
   const b = w < 0.5 ? Math.round(255 * (1 - w * 2)) : 0;
-  return `rgba(${r},${g},${b},0.6)`;
+  return `rgba(${r},${g},${b},0.35)`;
 }
 
 export function drawWeightOverlay(
@@ -166,7 +166,7 @@ export function drawVertexWeights(
     ctx.strokeStyle = isSelected ? "#fff" : "transparent";
     ctx.lineWidth = isSelected ? 2 : 0;
     ctx.beginPath();
-    ctx.arc(x, y, isSelected ? 5 : 3, 0, Math.PI * 2);
+    ctx.arc(x, y, isSelected ? 4 : 2, 0, Math.PI * 2);
     ctx.fill();
     if (isSelected) ctx.stroke();
   }
