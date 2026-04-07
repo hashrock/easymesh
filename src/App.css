@@ -241,18 +241,61 @@ header h1 {
 .anim-actions button:hover { background: #444; }
 .anim-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.param-label {
+  display: inline-block;
+  width: 40px;
+  flex-shrink: 0;
+  color: #888;
+  font-size: 12px;
+  text-align: right;
+  margin-right: 4px;
+}
+
 /* Timeline */
 .timeline {
-  padding: 0 4px;
-}
-.timeline-bar {
   position: relative;
-  height: 32px;
-  background: #1a1a1a;
+  background: #111;
   border-radius: 6px;
-  cursor: pointer;
   border: 1px solid #333;
+  overflow: visible;
 }
+.timeline-row {
+  display: flex;
+  align-items: stretch;
+  height: 26px;
+  border-bottom: 1px solid #222;
+}
+.timeline-row:last-of-type { border-bottom: none; }
+.timeline-row.selected { background: rgba(0, 100, 150, 0.15); }
+
+.timeline-label {
+  width: 80px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  color: #888;
+  cursor: pointer;
+  border-right: 1px solid #2a2a2a;
+  user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timeline-label:hover { color: #ccc; }
+.timeline-row.selected .timeline-label { color: #00ccff; font-weight: bold; }
+.timeline-ruler-label { color: #555; cursor: default; }
+
+.timeline-track {
+  flex: 1;
+  position: relative;
+  cursor: pointer;
+}
+.timeline-ruler {
+  background: #0d0d0d;
+}
+
 .timeline-playhead {
   position: absolute;
   top: 0;
@@ -262,20 +305,85 @@ header h1 {
   pointer-events: none;
   z-index: 2;
 }
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #2a2a2a;
+  pointer-events: none;
+}
+.timeline-tick-label {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  transform: translateY(-50%);
+  font-size: 9px;
+  color: #555;
+  pointer-events: none;
+}
+
 .timeline-kf {
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%) rotate(45deg);
-  width: 10px;
-  height: 10px;
-  background: #ffcc00;
-  border: 1px solid #aa8800;
+  width: 8px;
+  height: 8px;
+  background: #555;
+  border: 1px solid #777;
   cursor: pointer;
   z-index: 3;
-  transition: background 0.1s;
+  transition: background 0.1s, transform 0.1s;
 }
-.timeline-kf:hover { background: #ffe066; }
-.timeline-kf.selected { background: #00ccff; border-color: #0099cc; }
+.timeline-kf:hover {
+  background: #ffe066;
+  border-color: #ffcc00;
+  transform: translate(-50%, -50%) rotate(45deg) scale(1.3);
+}
+.timeline-kf.selected {
+  background: #00ccff;
+  border-color: #0099cc;
+}
+.timeline-kf.has-data {
+  background: #ffcc00;
+  border-color: #aa8800;
+}
+.timeline-kf.has-data.selected {
+  background: #00ccff;
+  border-color: #0099cc;
+}
+
+/* Timeline popup */
+.timeline-popup {
+  position: fixed;
+  z-index: 100;
+  background: #222;
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  transform: translate(-50%, -100%) translateY(-8px);
+}
+.timeline-popup button {
+  padding: 4px 12px;
+  background: #333;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.timeline-popup button:first-child {
+  background: #2a6a2a;
+  border-color: #3a8a3a;
+}
+.timeline-popup button:first-child:hover { background: #3a8a3a; }
+.timeline-popup button:hover { background: #444; }
 
 /* Stats */
 .stats {
