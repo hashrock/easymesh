@@ -178,8 +178,9 @@ function App() {
         }
       } else {
         const id = genBoneId();
+        const isFirst = bones.length === 0;
         const newBone: Bone = {
-          id, name: `Bone ${bones.length + 1}`,
+          id, name: isFirst ? "ROOT" : `Bone ${bones.length + 1}`,
           headX: pendingBone.headX, headY: pendingBone.headY,
           tailX: x, tailY: y, parentId: pendingBone.parentId,
         };

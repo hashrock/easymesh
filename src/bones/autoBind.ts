@@ -23,13 +23,15 @@ export function autoBind(
   points: [number, number][],
   bones: Bone[]
 ): VertexWeights[] {
-  if (bones.length === 0) return points.map(() => ({}));
+  // Exclude the first bone (ROOT) from auto-bind
+  const bindBones = bones.filter((_, i) => i > 0);
+  if (bindBones.length === 0) return points.map(() => ({}));
 
   return points.map(([px, py]) => {
     let minDist = Infinity;
-    let nearestId = bones[0].id;
+    let nearestId = bindBones[0].id;
 
-    for (const bone of bones) {
+    for (const bone of bindBones) {
       const dist = pointToSegmentDist(px, py, bone.headX, bone.headY, bone.tailX, bone.tailY);
       if (dist < minDist) {
         minDist = dist;
