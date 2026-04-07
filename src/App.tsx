@@ -668,6 +668,25 @@ function App() {
                     }} />
                   <span>{clip.duration.toFixed(1)}s</span>
                 </label>
+                <button onClick={() => {
+                  setClip(prev => {
+                    if (!prev) return prev;
+                    const newTracks = { ...prev.tracks };
+                    for (const [boneId, track] of Object.entries(newTracks)) {
+                      const first = track.find(kf => kf.time === 0);
+                      if (!first) continue;
+                      const existing = track.findIndex(kf => Math.abs(kf.time - prev.duration) < 0.01);
+                      const copied = { time: prev.duration, transform: { ...first.transform } };
+                      if (existing >= 0) {
+                        newTracks[boneId] = track.map((kf, i) => i === existing ? copied : kf);
+                      } else {
+                        newTracks[boneId] = [...track, copied].sort((a, b) => a.time - b.time);
+                      }
+                    }
+                    return { ...prev, tracks: newTracks };
+                  });
+                  setClipRev(r => r + 1);
+                }}>ループ用コピー</button>
               </>
             )}
 
