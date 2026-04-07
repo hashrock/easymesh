@@ -4,6 +4,8 @@ import type { AppMode, BindTool, Bone, BoneTransform, AnimationClip, Layer } fro
 import { drawBones, drawWeightOverlay, drawVertexWeights, findBoneAt, findBoneTailAt } from "./bones/BoneRenderer";
 import { autoBind, applyWeightPaint, setVertexWeight } from "./bones/autoBind";
 import { createClip, evaluateAnimation, deformMesh } from "./bones/animation";
+import sampleLayer2 from "./assets/layer2.png";
+import sampleLayer3 from "./assets/layer3.png";
 import "./App.css";
 
 let nextBoneId = 1;
@@ -79,6 +81,54 @@ function App() {
     workerRef.current = worker;
     return () => worker.terminate();
   }, []);
+
+  // --- Load sample layers on first mount ---
+  const sampleLoaded = useRef(false);
+  useEffect(() => {
+    if (sampleLoaded.current || layers.length > 0) return;
+    sampleLoaded.current = true;
+    const samples = [
+      { src: sampleLayer2, name: "レイヤー 2" },
+      { src: sampleLayer3, name: "レイヤー 3" },
+    ];
+    for (const sample of samples) {
+      const img = new Image();
+      img.onload = () => {
+        const id = genLayerId();
+        imageCache.current.set(id, img);
+        const newLayer: Layer = {
+          id, name: sample.name, imageSrc: sample.src,
+          mesh: null, weights: [], attachBoneId: null,
+          zOrder: samples.indexOf(sample), visible: true,
+        };
+        setLayers(prev => [...prev, newLayer]);
+        if (samples.indexOf(sample) === 0) setSelectedLayerId(id);
+        // Generate mesh
+        const worker = workerRef.current;
+        if (!worker) return;
+        const spacing = meshDensity;
+        const pad = autoPadding(spacing);
+        const offscreen = document.createElement("canvas");
+        offscreen.width = img.width; offscreen.height = img.height;
+        const ctx = offscreen.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        const reqId = ++requestIdRef.current;
+        worker.onmessage = (ev: MessageEvent<WorkerOutput | null>) => {
+          if (reqId !== requestIdRef.current) return;
+          if (ev.data) {
+            setLayers(prev => prev.map(l => l.id === id ? { ...l, mesh: ev.data! } : l));
+            bumpRev();
+          }
+        };
+        worker.postMessage({
+          imageData: imageData.data, width: img.width, height: img.height,
+          spacing, padding: pad, contourMode,
+        } as WorkerInput);
+      };
+      img.src = sample.src;
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const generateMeshForLayer = useCallback((layerId: string, img: HTMLImageElement, density?: number) => {
     const worker = workerRef.current;
