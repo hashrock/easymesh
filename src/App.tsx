@@ -32,7 +32,7 @@ function App() {
 
   // --- Bind state ---
   const [vertexWeights, setVertexWeights] = useState<VertexWeights[]>([]);
-  const [bindTool, setBindTool] = useState<BindTool>("auto");
+  const [bindTool, setBindTool] = useState<BindTool>("paint");
   const [brushRadius, setBrushRadius] = useState(30);
   const [brushStrength, setBrushStrength] = useState(0.3);
   const [selectedVertices, setSelectedVertices] = useState<Set<number>>(new Set());
@@ -579,7 +579,13 @@ function App() {
               disabled={!meshData}>
               ボーン作成
             </button>
-            <button className={appMode === "boneBind" ? "active" : ""} onClick={() => setAppMode("boneBind")}
+            <button className={appMode === "boneBind" ? "active" : ""} onClick={() => {
+              setAppMode("boneBind");
+              if (vertexWeights.length === 0 && meshData && bones.length > 1) {
+                const weights = autoBind(meshData.points, bones);
+                updateWeights(weights);
+              }
+            }}
               disabled={!meshData || bones.length === 0}>
               ボーンバインド
             </button>
@@ -621,13 +627,9 @@ function App() {
             {appMode === "boneBind" && (
               <>
                 <div className="bind-tools">
-                  <button className={bindTool === "auto" ? "active" : ""} onClick={() => setBindTool("auto")}>自動</button>
                   <button className={bindTool === "paint" ? "active" : ""} onClick={() => setBindTool("paint")}>ペイント</button>
                   <button className={bindTool === "select" ? "active" : ""} onClick={() => setBindTool("select")}>選択</button>
                 </div>
-                {bindTool === "auto" && (
-                  <button className="auto-bind-btn" onClick={handleAutoBind}>自動バインド実行</button>
-                )}
                 {bindTool === "paint" && (
                   <>
                     <label>
