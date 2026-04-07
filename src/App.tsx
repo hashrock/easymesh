@@ -672,7 +672,11 @@ function App() {
             </label>
             <label>
               <input type="checkbox" checked={showMesh} onChange={(e) => setShowMesh(e.target.checked)} />
-              メッシュ
+              メッシュ線
+            </label>
+            <label>
+              <input type="checkbox" checked={showPoints} onChange={(e) => setShowPoints(e.target.checked)} />
+              頂点
             </label>
             {processing && <span className="processing">処理中...</span>}
             <button onClick={() => { setImage(null); setMeshData(null); setBones([]); setVertexWeights([]); setSelectedVertices(new Set()); setClip(null); }}>
