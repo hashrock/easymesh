@@ -185,6 +185,31 @@ function pointLineDistance(
   return Math.hypot(px - (lx1 + t * dx), py - (ly1 + t * dy));
 }
 
+/** Compute convex hull (Graham scan) */
+function convexHull(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points;
+  const pts = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+
+  const lower: [number, number][] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0)
+      lower.pop();
+    lower.push(p);
+  }
+
+  const upper: [number, number][] = [];
+  for (const p of [...pts].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0)
+      upper.pop();
+    upper.push(p);
+  }
+
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
 /** Check if a triangle's centroid falls inside the opaque mask */
 function isTriangleInMask(
   p1: [number, number],
@@ -283,15 +308,17 @@ function App() {
   const [meshData, setMeshData] = useState<MeshData | null>(null);
   const [meshDensity, setMeshDensity] = useState(30);
   const [padding, setPadding] = useState(0);
+  const [contourMode, setContourMode] = useState<"concave" | "convex">("concave");
   const [showImage, setShowImage] = useState(true);
   const [showMesh, setShowMesh] = useState(true);
   const [showPoints, setShowPoints] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const processImage = useCallback(
-    (img: HTMLImageElement, density?: number, pad?: number) => {
+    (img: HTMLImageElement, density?: number, pad?: number, mode?: "concave" | "convex") => {
       const spacing = density ?? meshDensity;
       const padRadius = pad ?? padding;
+      const cMode = mode ?? contourMode;
 
       // Extract alpha mask
       const offscreen = document.createElement("canvas");
@@ -305,15 +332,22 @@ function App() {
       // Dilate mask if padding > 0
       const mask = padRadius > 0 ? dilateMask(baseMask, img.width, img.height, padRadius) : baseMask;
 
-      // Trace actual contour using Moore neighborhood
+      // Trace contour using Moore neighborhood
       const rawContour = mooreTrace(mask, img.width, img.height);
       if (rawContour.length < 3) return;
 
-      // Subsample then simplify with RDP
-      const subsampled = subsampleContour(rawContour, Math.max(1, Math.floor(spacing * 0.3)));
-      const simplified = rdpSimplify(subsampled, spacing * 0.5);
+      let simplified: [number, number][];
+      if (cMode === "convex") {
+        // Convex hull mode
+        const hull = convexHull(rawContour);
+        simplified = rdpSimplify(hull, spacing * 0.3);
+      } else {
+        // Concave mode: subsample then simplify
+        const subsampled = subsampleContour(rawContour, Math.max(1, Math.floor(spacing * 0.3)));
+        simplified = rdpSimplify(subsampled, spacing * 0.5);
+      }
 
-      // Sample edge points along the concave outline + interior points
+      // Sample edge points along the outline + interior points
       const edgePoints = samplePolygonEdges(simplified, spacing);
       const interiorPoints = generateInteriorPoints(
         simplified,
@@ -352,7 +386,7 @@ function App() {
         hull: simplified,
       });
     },
-    [meshDensity, padding]
+    [meshDensity, padding, contourMode]
   );
 
   const handleDrop = useCallback(
@@ -391,6 +425,14 @@ function App() {
     (val: number) => {
       setPadding(val);
       if (image) processImage(image, undefined, val);
+    },
+    [image, processImage]
+  );
+
+  const handleModeChange = useCallback(
+    (mode: "concave" | "convex") => {
+      setContourMode(mode);
+      if (image) processImage(image, undefined, undefined, mode);
     },
     [image, processImage]
   );
@@ -503,6 +545,13 @@ function App() {
               />
               <span>{padding}px</span>
             </label>
+            <select
+              value={contourMode}
+              onChange={(e) => handleModeChange(e.target.value as "concave" | "convex")}
+            >
+              <option value="concave">輪郭追従</option>
+              <option value="convex">凸包</option>
+            </select>
             <label>
               <input
                 type="checkbox"

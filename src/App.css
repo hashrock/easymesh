@@ -73,6 +73,16 @@ header p {
   width: 120px;
 }
 
+.toolbar select {
+  padding: 4px 8px;
+  background: #333;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .toolbar button {
   margin-left: auto;
   padding: 4px 12px;
