@@ -294,9 +294,20 @@ function processMesh(input: WorkerInput): WorkerOutput | null {
   }
   const delaunay = new Delaunator(coords);
 
+  const rawTriangles = Array.from(delaunay.triangles);
+  const filteredTriangles: number[] = [];
+  for (let i = 0; i < rawTriangles.length; i += 3) {
+    const a = rawTriangles[i];
+    const b = rawTriangles[i + 1];
+    const c = rawTriangles[i + 2];
+    if (isTriangleInMask(allPoints[a], allPoints[b], allPoints[c], mask, width, height)) {
+      filteredTriangles.push(a, b, c);
+    }
+  }
+
   return {
     points: allPoints,
-    triangles: Array.from(delaunay.triangles),
+    triangles: filteredTriangles,
     hull: simplified,
   };
 }
