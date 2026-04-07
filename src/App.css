@@ -222,6 +222,61 @@ header h1 {
 .weight-row input[type="range"] { flex: 1; width: auto; }
 .weight-value { width: 32px; text-align: right; color: #ccc; font-variant-numeric: tabular-nums; }
 
+/* Animation */
+.anim-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.anim-actions button {
+  flex: 1;
+  padding: 4px 8px;
+  background: #333;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.anim-actions button:hover { background: #444; }
+.anim-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Timeline */
+.timeline {
+  padding: 0 4px;
+}
+.timeline-bar {
+  position: relative;
+  height: 32px;
+  background: #1a1a1a;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid #333;
+}
+.timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ff4444;
+  pointer-events: none;
+  z-index: 2;
+}
+.timeline-kf {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  background: #ffcc00;
+  border: 1px solid #aa8800;
+  cursor: pointer;
+  z-index: 3;
+  transition: background 0.1s;
+}
+.timeline-kf:hover { background: #ffe066; }
+.timeline-kf.selected { background: #00ccff; border-color: #0099cc; }
+
 /* Stats */
 .stats {
   text-align: center;

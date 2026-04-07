@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkerInput, WorkerOutput } from "./meshWorker";
-import type { AppMode, BindTool, Bone, MeshData, VertexWeights } from "./types";
+import type { AppMode, BindTool, Bone, BoneTransform, AnimationClip, Keyframe, MeshData, VertexWeights } from "./types";
 import { drawBones, drawWeightOverlay, drawVertexWeights, findBoneAt, findBoneTailAt } from "./bones/BoneRenderer";
 import { autoBind, applyWeightPaint, setVertexWeight } from "./bones/autoBind";
+import { createClip, createKeyframe, evaluateAnimation, deformMesh } from "./bones/animation";
 import "./App.css";
 
 let nextBoneId = 1;
@@ -36,6 +37,14 @@ function App() {
   const [brushStrength, setBrushStrength] = useState(0.3);
   const [selectedVertices, setSelectedVertices] = useState<Set<number>>(new Set());
 
+  // --- Animation state ---
+  const [clip, setClip] = useState<AnimationClip | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [selectedKeyframeIdx, setSelectedKeyframeIdx] = useState(0);
+  const animFrameRef = useRef(0);
+  const lastTimeRef = useRef(0);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
@@ -45,6 +54,7 @@ function App() {
   const isPaintingRef = useRef(false);
   const drawRequestedRef = useRef(false);
   const [weightsRev, setWeightsRev] = useState(0);
+  const [clipRev, setClipRev] = useState(0);
   const updateWeights = useCallback((w: VertexWeights[]) => {
     setVertexWeights(w);
     setWeightsRev(r => r + 1);
@@ -155,7 +165,6 @@ function App() {
 
     if (appMode === "boneCreate") {
       if (!pendingBone) {
-        // First click: set head. Check if near a tail for parenting
         const parentBone = findBoneTailAt(bones, x, y);
         if (parentBone) {
           setPendingBone({ headX: parentBone.tailX, headY: parentBone.tailY, tailX: x, tailY: y, parentId: parentBone.id });
@@ -163,14 +172,11 @@ function App() {
           setPendingBone({ headX: x, headY: y, tailX: x, tailY: y, parentId: null });
         }
       } else {
-        // Second click: commit bone
         const id = genBoneId();
         const newBone: Bone = {
-          id,
-          name: `Bone ${bones.length + 1}`,
+          id, name: `Bone ${bones.length + 1}`,
           headX: pendingBone.headX, headY: pendingBone.headY,
-          tailX: x, tailY: y,
-          parentId: pendingBone.parentId,
+          tailX: x, tailY: y, parentId: pendingBone.parentId,
         };
         setBones(prev => [...prev, newBone]);
         setPendingBone(null);
@@ -185,7 +191,6 @@ function App() {
         );
         updateWeights(newWeights);
       } else if (bindTool === "select" && meshData) {
-        // Find nearest vertex
         let minDist = Infinity;
         let nearest = -1;
         for (let i = 0; i < meshData.points.length; i++) {
@@ -207,7 +212,7 @@ function App() {
         }
       }
     }
-  }, [appMode, pendingBone, bones, canvasCoords, bindTool, selectedBoneId, meshData, vertexWeights, brushRadius, brushStrength]);
+  }, [appMode, pendingBone, bones, canvasCoords, bindTool, selectedBoneId, meshData, vertexWeights, brushRadius, brushStrength, updateWeights]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const pos = canvasCoords(e);
@@ -228,7 +233,7 @@ function App() {
       );
       updateWeights(newWeights);
     }
-  }, [appMode, pendingBone, bones, canvasCoords, bindTool, selectedBoneId, meshData, vertexWeights, brushRadius, brushStrength]);
+  }, [appMode, pendingBone, bones, canvasCoords, bindTool, selectedBoneId, meshData, vertexWeights, brushRadius, brushStrength, updateWeights]);
 
   const handleCanvasMouseUp = useCallback(() => {
     isPaintingRef.current = false;
@@ -243,6 +248,10 @@ function App() {
         setSelectedBoneId(null);
       }
     }
+    if (appMode === "animate" && e.key === " ") {
+      e.preventDefault();
+      setIsPlaying(p => !p);
+    }
   }, [appMode, selectedBoneId]);
 
   // --- Auto bind ---
@@ -251,6 +260,90 @@ function App() {
     const weights = autoBind(meshData.points, bones);
     updateWeights(weights);
   }, [meshData, bones, updateWeights]);
+
+  // --- Animation helpers ---
+  const initAnimation = useCallback(() => {
+    if (bones.length === 0) return;
+    const newClip = createClip("Animation 1", 2.0, bones);
+    // Add end keyframe
+    newClip.keyframes.push(createKeyframe(2.0, bones));
+    setClip(newClip);
+    setCurrentTime(0);
+    setSelectedKeyframeIdx(0);
+  }, [bones]);
+
+  const addKeyframe = useCallback(() => {
+    if (!clip) return;
+    // Check if keyframe already exists at currentTime
+    const existing = clip.keyframes.findIndex(kf => Math.abs(kf.time - currentTime) < 0.01);
+    if (existing >= 0) {
+      setSelectedKeyframeIdx(existing);
+      return;
+    }
+    const newKf = createKeyframe(currentTime, bones);
+    // Interpolate from current state
+    const currentTransforms = evaluateAnimation(clip, currentTime);
+    for (const [id, tf] of Object.entries(currentTransforms)) {
+      newKf.transforms[id] = { ...tf };
+    }
+    const newKeyframes = [...clip.keyframes, newKf].sort((a, b) => a.time - b.time);
+    setClip({ ...clip, keyframes: newKeyframes });
+    setSelectedKeyframeIdx(newKeyframes.findIndex(kf => Math.abs(kf.time - currentTime) < 0.01));
+  }, [clip, currentTime, bones]);
+
+  const updateBoneTransformInKeyframe = useCallback((boneId: string, field: keyof BoneTransform, value: number) => {
+    if (!clip) return;
+    setClip(prev => {
+      if (!prev) return prev;
+      const newKeyframes = prev.keyframes.map((kf, i) => {
+        if (i !== selectedKeyframeIdx) return kf;
+        return {
+          ...kf,
+          transforms: {
+            ...kf.transforms,
+            [boneId]: {
+              ...(kf.transforms[boneId] ?? { rotation: 0, translateX: 0, translateY: 0 }),
+              [field]: value,
+            },
+          },
+        };
+      });
+      return { ...prev, keyframes: newKeyframes };
+    });
+    setClipRev(r => r + 1);
+  }, [clip, selectedKeyframeIdx]);
+
+  const deleteKeyframe = useCallback(() => {
+    if (!clip || clip.keyframes.length <= 1) return;
+    const newKeyframes = clip.keyframes.filter((_, i) => i !== selectedKeyframeIdx);
+    setClip({ ...clip, keyframes: newKeyframes });
+    setSelectedKeyframeIdx(Math.min(selectedKeyframeIdx, newKeyframes.length - 1));
+  }, [clip, selectedKeyframeIdx]);
+
+  // --- Playback loop ---
+  useEffect(() => {
+    if (!isPlaying || !clip) return;
+    lastTimeRef.current = performance.now();
+
+    const tick = (now: number) => {
+      const dt = (now - lastTimeRef.current) / 1000;
+      lastTimeRef.current = now;
+      setCurrentTime(prev => {
+        const next = prev + dt;
+        return next > clip.duration ? 0 : next; // loop
+      });
+      animFrameRef.current = requestAnimationFrame(tick);
+    };
+    animFrameRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animFrameRef.current);
+  }, [isPlaying, clip]);
+
+  // --- Compute deformed points for animation ---
+  const deformedPoints = (() => {
+    if (appMode !== "animate" || !clip || !meshData || vertexWeights.length === 0) return null;
+    const transforms = evaluateAnimation(clip, currentTime);
+    return deformMesh(meshData.points, bones, transforms, vertexWeights);
+  })();
 
   // --- Draw ---
   const draw = useCallback(() => {
@@ -261,26 +354,41 @@ function App() {
     const ctx = canvas.getContext("2d")!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (showImage) {
+    const displayPoints = deformedPoints ?? meshData?.points;
+
+    if (showImage && meshData && appMode === "animate" && deformedPoints) {
+      // Draw deformed textured mesh
+      ctx.save();
+      for (let i = 0; i < meshData.triangles.length; i += 3) {
+        const a = meshData.triangles[i];
+        const b = meshData.triangles[i + 1];
+        const c = meshData.triangles[i + 2];
+        drawTexturedTriangle(ctx, image,
+          meshData.points[a], meshData.points[b], meshData.points[c],
+          deformedPoints[a], deformedPoints[b], deformedPoints[c]
+        );
+      }
+      ctx.restore();
+    } else if (showImage) {
       ctx.globalAlpha = appMode === "boneBind" ? 0.3 : 0.5;
       ctx.drawImage(image, 0, 0);
       ctx.globalAlpha = 1;
     }
 
-    // Weight overlay (under mesh wireframe)
+    // Weight overlay
     if (appMode === "boneBind" && selectedBoneId && meshData && vertexWeights.length > 0) {
       drawWeightOverlay(ctx, meshData.points, meshData.triangles, vertexWeights, selectedBoneId);
     }
 
-    if (meshData && showMesh) {
-      ctx.strokeStyle = appMode === "boneBind" ? "rgba(0,204,255,0.3)" : "#00ccff";
+    if (meshData && showMesh && displayPoints) {
+      ctx.strokeStyle = appMode === "boneBind" ? "rgba(0,204,255,0.3)" : appMode === "animate" ? "rgba(0,204,255,0.2)" : "#00ccff";
       ctx.lineWidth = 1;
-      const { points, triangles } = meshData;
+      const { triangles } = meshData;
       for (let i = 0; i < triangles.length; i += 3) {
         ctx.beginPath();
-        ctx.moveTo(points[triangles[i]][0], points[triangles[i]][1]);
-        ctx.lineTo(points[triangles[i + 1]][0], points[triangles[i + 1]][1]);
-        ctx.lineTo(points[triangles[i + 2]][0], points[triangles[i + 2]][1]);
+        ctx.moveTo(displayPoints[triangles[i]][0], displayPoints[triangles[i]][1]);
+        ctx.lineTo(displayPoints[triangles[i + 1]][0], displayPoints[triangles[i + 1]][1]);
+        ctx.lineTo(displayPoints[triangles[i + 2]][0], displayPoints[triangles[i + 2]][1]);
         ctx.closePath();
         ctx.stroke();
       }
@@ -288,9 +396,9 @@ function App() {
 
     if (appMode === "boneBind" && selectedBoneId && meshData && vertexWeights.length > 0) {
       drawVertexWeights(ctx, meshData.points, vertexWeights, selectedBoneId, selectedVertices);
-    } else if (meshData && showPoints) {
+    } else if (meshData && showPoints && displayPoints && appMode !== "animate") {
       ctx.fillStyle = "#ff4444";
-      for (const [x, y] of meshData.points) {
+      for (const [x, y] of displayPoints) {
         ctx.beginPath();
         ctx.arc(x, y, 2, 0, Math.PI * 2);
         ctx.fill();
@@ -313,7 +421,10 @@ function App() {
     if (appMode === "boneCreate" || appMode === "boneBind") {
       drawBones(ctx, bones, selectedBoneId, hoveredBoneId, pendingBone);
     }
-  }, [image, meshData, showImage, showMesh, showPoints, appMode, bones, selectedBoneId, hoveredBoneId, pendingBone, vertexWeights, selectedVertices]);
+    if (appMode === "animate") {
+      drawBones(ctx, bones, selectedBoneId, null, null);
+    }
+  }, [image, meshData, showImage, showMesh, showPoints, appMode, bones, selectedBoneId, hoveredBoneId, pendingBone, vertexWeights, selectedVertices, deformedPoints]);
 
   // Redraw when deps change
   const prevDeps = useRef<string>("");
@@ -322,6 +433,8 @@ function App() {
     bonesLen: bones.length, selectedBoneId, hoveredBoneId,
     meshLen: meshData?.points.length, weightsRev,
     selVerts: [...selectedVertices].join(","),
+    animTime: appMode === "animate" ? currentTime.toFixed(3) : 0,
+    clipRev,
   });
   if (depsKey !== prevDeps.current) {
     prevDeps.current = depsKey;
@@ -334,7 +447,6 @@ function App() {
   // --- Weight editor for selected vertices ---
   const weightEditorRows = (() => {
     if (appMode !== "boneBind" || bindTool !== "select" || selectedVertices.size === 0 || bones.length === 0) return null;
-    // Show average weight per bone for selected vertices
     const avg: Record<string, number> = {};
     for (const bone of bones) avg[bone.id] = 0;
     for (const vi of selectedVertices) {
@@ -372,6 +484,71 @@ function App() {
     );
   })();
 
+  // --- Animation keyframe editor panel ---
+  const currentKf: Keyframe | null = clip ? clip.keyframes[selectedKeyframeIdx] ?? null : null;
+  const animEditorPanel = (() => {
+    if (appMode !== "animate" || !clip) return null;
+    return (
+      <div className="side-panel">
+        <div className="bone-list">
+          <div className="panel-title">キーフレーム操作</div>
+          <div className="anim-actions">
+            <button onClick={addKeyframe}>キーフレーム追加</button>
+            <button onClick={deleteKeyframe} disabled={clip.keyframes.length <= 1}>削除</button>
+          </div>
+        </div>
+        {currentKf && selectedBoneId && (
+          <div className="weight-editor">
+            <div className="weight-editor-title">
+              {bones.find(b => b.id === selectedBoneId)?.name ?? "?"} @ {currentKf.time.toFixed(2)}s
+            </div>
+            {(() => {
+              const tf = currentKf.transforms[selectedBoneId] ?? { rotation: 0, translateX: 0, translateY: 0 };
+              return (
+                <>
+                  <div className="weight-row">
+                    <span className="weight-bone-name">回転</span>
+                    <input type="range" min={-180} max={180} step={1}
+                      value={Math.round(tf.rotation * 180 / Math.PI)}
+                      onChange={(e) => updateBoneTransformInKeyframe(selectedBoneId, "rotation", Number(e.target.value) * Math.PI / 180)}
+                    />
+                    <span className="weight-value">{Math.round(tf.rotation * 180 / Math.PI)}°</span>
+                  </div>
+                  <div className="weight-row">
+                    <span className="weight-bone-name">移動X</span>
+                    <input type="range" min={-100} max={100} step={1}
+                      value={Math.round(tf.translateX)}
+                      onChange={(e) => updateBoneTransformInKeyframe(selectedBoneId, "translateX", Number(e.target.value))}
+                    />
+                    <span className="weight-value">{Math.round(tf.translateX)}</span>
+                  </div>
+                  <div className="weight-row">
+                    <span className="weight-bone-name">移動Y</span>
+                    <input type="range" min={-100} max={100} step={1}
+                      value={Math.round(tf.translateY)}
+                      onChange={(e) => updateBoneTransformInKeyframe(selectedBoneId, "translateY", Number(e.target.value))}
+                    />
+                    <span className="weight-value">{Math.round(tf.translateY)}</span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+        <div className="bone-list">
+          <div className="panel-title">ボーン選択</div>
+          {bones.map(bone => (
+            <div key={bone.id}
+              className={`bone-item ${bone.id === selectedBoneId ? "selected" : ""}`}
+              onClick={() => setSelectedBoneId(bone.id)}>
+              {bone.name}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  })();
+
   return (
     <div className="app" onKeyDown={handleKeyDown} tabIndex={0}>
       <header>
@@ -399,6 +576,12 @@ function App() {
             <button className={appMode === "boneBind" ? "active" : ""} onClick={() => setAppMode("boneBind")}
               disabled={!meshData || bones.length === 0}>
               ボーンバインド
+            </button>
+            <button className={appMode === "animate" ? "active" : ""} onClick={() => {
+              setAppMode("animate");
+              if (!clip) initAnimation();
+            }} disabled={!meshData || bones.length === 0 || vertexWeights.length === 0}>
+              アニメーション
             </button>
           </div>
 
@@ -468,6 +651,24 @@ function App() {
               </>
             )}
 
+            {appMode === "animate" && clip && (
+              <>
+                <button onClick={() => setIsPlaying(p => !p)}>
+                  {isPlaying ? "⏸ 停止" : "▶ 再生"}
+                </button>
+                <span className="toolbar-hint">{currentTime.toFixed(2)}s / {clip.duration.toFixed(1)}s</span>
+                <label>
+                  時間長:
+                  <input type="range" min={0.5} max={10} step={0.5} value={clip.duration}
+                    onChange={(e) => {
+                      const d = Number(e.target.value);
+                      setClip(prev => prev ? { ...prev, duration: d } : prev);
+                    }} />
+                  <span>{clip.duration.toFixed(1)}s</span>
+                </label>
+              </>
+            )}
+
             <label>
               <input type="checkbox" checked={showImage} onChange={(e) => setShowImage(e.target.checked)} />
               画像
@@ -477,7 +678,7 @@ function App() {
               メッシュ
             </label>
             {processing && <span className="processing">処理中...</span>}
-            <button onClick={() => { setImage(null); setMeshData(null); setBones([]); setVertexWeights([]); setSelectedVertices(new Set()); }}>
+            <button onClick={() => { setImage(null); setMeshData(null); setBones([]); setVertexWeights([]); setSelectedVertices(new Set()); setClip(null); }}>
               リセット
             </button>
           </div>
@@ -492,7 +693,7 @@ function App() {
               />
             </div>
 
-            {/* Side panel for bone list & weight editor */}
+            {/* Side panel */}
             {(appMode === "boneCreate" || appMode === "boneBind") && (
               <div className="side-panel">
                 <div className="bone-list">
@@ -510,7 +711,33 @@ function App() {
                 {weightEditorRows}
               </div>
             )}
+            {appMode === "animate" && animEditorPanel}
           </div>
+
+          {/* Timeline */}
+          {appMode === "animate" && clip && (
+            <div className="timeline">
+              <div className="timeline-bar"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const t = ((e.clientX - rect.left) / rect.width) * clip.duration;
+                  setCurrentTime(Math.max(0, Math.min(clip.duration, t)));
+                  setIsPlaying(false);
+                }}>
+                {/* Playhead */}
+                <div className="timeline-playhead"
+                  style={{ left: `${(currentTime / clip.duration) * 100}%` }} />
+                {/* Keyframe markers */}
+                {clip.keyframes.map((kf, i) => (
+                  <div key={i}
+                    className={`timeline-kf ${i === selectedKeyframeIdx ? "selected" : ""}`}
+                    style={{ left: `${(kf.time / clip.duration) * 100}%` }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedKeyframeIdx(i); setCurrentTime(kf.time); setIsPlaying(false); }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {meshData && (
             <div className="stats">
@@ -523,6 +750,47 @@ function App() {
       )}
     </div>
   );
+}
+
+/** Draw a textured triangle from source (rest pose) to destination (deformed) */
+function drawTexturedTriangle(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  s0: [number, number], s1: [number, number], s2: [number, number], // source UVs
+  d0: [number, number], d1: [number, number], d2: [number, number], // destination positions
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(d0[0], d0[1]);
+  ctx.lineTo(d1[0], d1[1]);
+  ctx.lineTo(d2[0], d2[1]);
+  ctx.closePath();
+  ctx.clip();
+
+  // Affine transform from source triangle to destination triangle
+  // We solve: [d0, d1, d2] = M * [s0, s1, s2]
+  const sx0 = s0[0], sy0 = s0[1];
+  const sx1 = s1[0], sy1 = s1[1];
+  const sx2 = s2[0], sy2 = s2[1];
+  const dx0 = d0[0], dy0 = d0[1];
+  const dx1 = d1[0], dy1 = d1[1];
+  const dx2 = d2[0], dy2 = d2[1];
+
+  const det = sx0 * (sy1 - sy2) + sx1 * (sy2 - sy0) + sx2 * (sy0 - sy1);
+  if (Math.abs(det) < 1e-6) { ctx.restore(); return; }
+  const invDet = 1 / det;
+
+  const a = ((dx0 * (sy1 - sy2)) + (dx1 * (sy2 - sy0)) + (dx2 * (sy0 - sy1))) * invDet;
+  const b = ((dx0 * (sx2 - sx1)) + (dx1 * (sx0 - sx2)) + (dx2 * (sx1 - sx0))) * invDet;
+  const c_val = ((dx0 * (sx1 * sy2 - sx2 * sy1)) + (dx1 * (sx2 * sy0 - sx0 * sy2)) + (dx2 * (sx0 * sy1 - sx1 * sy0))) * invDet;
+  const d = ((dy0 * (sy1 - sy2)) + (dy1 * (sy2 - sy0)) + (dy2 * (sy0 - sy1))) * invDet;
+  const e_val = ((dy0 * (sx2 - sx1)) + (dy1 * (sx0 - sx2)) + (dy2 * (sx1 - sx0))) * invDet;
+  const f = ((dy0 * (sx1 * sy2 - sx2 * sy1)) + (dy1 * (sx2 * sy0 - sx0 * sy2)) + (dy2 * (sx0 * sy1 - sx1 * sy0))) * invDet;
+
+  ctx.setTransform(a, d, b, e_val, c_val, f);
+  ctx.drawImage(img, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.restore();
 }
 
 export default App;
