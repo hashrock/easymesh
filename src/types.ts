@@ -6,7 +6,6 @@ export interface Bone {
   tailX: number;
   tailY: number;
   parentId: string | null;
-  layerId: string | null; // null = global bone, string = local to that layer
 }
 
 // Per-vertex weight map: boneId -> weight (0..1), sum should be 1.0

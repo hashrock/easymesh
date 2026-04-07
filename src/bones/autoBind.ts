@@ -19,13 +19,34 @@ function pointToSegmentDist(
  * This simulates "expanding bone influence outward" – equivalent to
  * nearest-bone Voronoi assignment.
  */
+/** Get a bone and all its descendants */
+function getDescendants(bones: Bone[], rootId: string): Set<string> {
+  const result = new Set<string>();
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    result.add(id);
+    for (const b of bones) {
+      if (b.parentId === id && !result.has(b.id)) queue.push(b.id);
+    }
+  }
+  return result;
+}
+
 export function autoBind(
   points: [number, number][],
   bones: Bone[],
-  layerId?: string | null
+  attachBoneId?: string | null
 ): VertexWeights[] {
-  // Use global bones + local bones for this layer, exclude ROOT (first bone)
-  const bindBones = bones.filter((b, i) => i > 0 && (b.layerId === null || b.layerId === layerId));
+  let bindBones: Bone[];
+  if (attachBoneId) {
+    // Use the attach bone's descendants (excluding the attach bone itself if it's ROOT)
+    const descendants = getDescendants(bones, attachBoneId);
+    bindBones = bones.filter(b => descendants.has(b.id) && b.id !== bones[0]?.id);
+  } else {
+    // No attach bone: use all non-ROOT bones
+    bindBones = bones.filter((_, i) => i > 0);
+  }
   if (bindBones.length === 0) return points.map(() => ({}));
 
   return points.map(([px, py]) => {

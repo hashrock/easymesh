@@ -229,6 +229,30 @@ header h1 {
   padding: 8px 0;
 }
 
+/* Tree items */
+.tree-item {
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s;
+}
+.tree-item:hover { background: #2a2a2a; }
+.tree-item.selected { background: #004466; color: #fff; }
+.tree-bone { color: #ccc; }
+.tree-layer { color: #8cb4d8; }
+.tree-icon {
+  display: inline-block;
+  width: 14px;
+  font-size: 10px;
+  text-align: center;
+  opacity: 0.6;
+}
+
 /* Bone list */
 .bone-list {
   background: #1a1a1a;

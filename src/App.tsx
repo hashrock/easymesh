@@ -287,7 +287,6 @@ function App() {
           id, name: isFirst ? "ROOT" : `Bone ${bones.length + 1}`,
           headX: pendingBone.headX, headY: pendingBone.headY,
           tailX: x, tailY: y, parentId: pendingBone.parentId,
-          layerId: isFirst ? null : selectedLayerId, // ROOT is always global
         };
         setBones(prev => [...prev, newBone]);
         setPendingBone(null);
@@ -513,6 +512,36 @@ function App() {
     }
   }
 
+  // --- Tree rendering ---
+  const renderBoneTree = (parentId: string | null, depth: number): React.ReactNode[] => {
+    const children = bones.filter(b => b.parentId === parentId);
+    const result: React.ReactNode[] = [];
+    for (const bone of children) {
+      result.push(
+        <div key={bone.id}
+          className={`tree-item tree-bone ${bone.id === selectedBoneId ? "selected" : ""}`}
+          style={{ paddingLeft: depth * 16 + 8 }}
+          onClick={() => { setSelectedBoneId(bone.id); setSelectedLayerId(null); }}>
+          <span className="tree-icon">◆</span> {bone.name}
+        </div>
+      );
+      // Layers attached to this bone
+      for (const layer of layers.filter(l => l.attachBoneId === bone.id)) {
+        result.push(
+          <div key={`layer-${layer.id}`}
+            className={`tree-item tree-layer ${layer.id === selectedLayerId ? "selected" : ""}`}
+            style={{ paddingLeft: (depth + 1) * 16 + 8 }}
+            onClick={() => setSelectedLayerId(layer.id)}>
+            <span className="tree-icon">▧</span> {layer.name}
+          </div>
+        );
+      }
+      // Recurse into children
+      result.push(...renderBoneTree(bone.id, depth + 1));
+    }
+    return result;
+  };
+
   // --- Weight editor ---
   const weightEditorRows = (() => {
     if (appMode !== "boneBind" || bindTool !== "select" || selectedVertices.size === 0 || bones.length === 0 || !selectedLayer) return null;
@@ -627,7 +656,7 @@ function App() {
               if (bones.length > 1) {
                 setLayers(prev => prev.map(l => {
                   if (l.mesh && l.weights.length === 0) {
-                    return { ...l, weights: autoBind(l.mesh.points, bones, l.id) };
+                    return { ...l, weights: autoBind(l.mesh.points, bones, l.attachBoneId) };
                   }
                   return l;
                 }));
@@ -703,10 +732,6 @@ function App() {
             {/* Layer panel (left) */}
             <div className="layer-panel">
               <div className="panel-title">レイヤ</div>
-              <div className={`layer-item ${selectedLayerId === null ? "selected" : ""}`}
-                onClick={() => setSelectedLayerId(null)}>
-                <span className="layer-name">グローバル</span>
-              </div>
               {layers.slice().sort((a, b) => b.zOrder - a.zOrder).map(layer => (
                 <div key={layer.id} className={`layer-item ${layer.id === selectedLayerId ? "selected" : ""}`}
                   onClick={() => setSelectedLayerId(layer.id)}>
@@ -738,29 +763,19 @@ function App() {
             {(appMode === "boneCreate" || appMode === "boneBind") && (
               <div className="side-panel">
                 <div className="bone-list">
-                  <div className="panel-title">グローバルボーン</div>
-                  {bones.filter(b => b.layerId === null).length === 0 && <div className="panel-empty">なし</div>}
-                  {bones.filter(b => b.layerId === null).map(bone => (
-                    <div key={bone.id} className={`bone-item ${bone.id === selectedBoneId ? "selected" : ""}`}
-                      onClick={() => setSelectedBoneId(bone.id)}>
-                      {bone.name}
-                      {bone.parentId && <span className="bone-parent"> ← {bones.find(b => b.id === bone.parentId)?.name}</span>}
+                  <div className="panel-title">ツリー</div>
+                  {bones.length === 0 && layers.length === 0 && <div className="panel-empty">ボーンなし</div>}
+                  {renderBoneTree(null, 0)}
+                  {/* Unattached layers */}
+                  {layers.filter(l => !l.attachBoneId).map(layer => (
+                    <div key={layer.id}
+                      className={`tree-item tree-layer ${layer.id === selectedLayerId ? "selected" : ""}`}
+                      style={{ paddingLeft: 8 }}
+                      onClick={() => setSelectedLayerId(layer.id)}>
+                      <span className="tree-icon">▧</span> {layer.name}
                     </div>
                   ))}
                 </div>
-                {selectedLayerId && (
-                  <div className="bone-list">
-                    <div className="panel-title">ローカルボーン ({selectedLayer?.name})</div>
-                    {bones.filter(b => b.layerId === selectedLayerId).length === 0 && <div className="panel-empty">なし</div>}
-                    {bones.filter(b => b.layerId === selectedLayerId).map(bone => (
-                      <div key={bone.id} className={`bone-item ${bone.id === selectedBoneId ? "selected" : ""}`}
-                        onClick={() => setSelectedBoneId(bone.id)}>
-                        {bone.name}
-                        {bone.parentId && <span className="bone-parent"> ← {bones.find(b => b.id === bone.parentId)?.name}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
                 {weightEditorRows}
               </div>
             )}
