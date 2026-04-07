@@ -222,6 +222,7 @@ function App() {
           id, name: isFirst ? "ROOT" : `Bone ${bones.length + 1}`,
           headX: pendingBone.headX, headY: pendingBone.headY,
           tailX: x, tailY: y, parentId: pendingBone.parentId,
+          layerId: isFirst ? null : selectedLayerId, // ROOT is always global
         };
         setBones(prev => [...prev, newBone]);
         setPendingBone(null);
@@ -559,7 +560,7 @@ function App() {
               if (bones.length > 1) {
                 setLayers(prev => prev.map(l => {
                   if (l.mesh && l.weights.length === 0) {
-                    return { ...l, weights: autoBind(l.mesh.points, bones) };
+                    return { ...l, weights: autoBind(l.mesh.points, bones, l.id) };
                   }
                   return l;
                 }));
@@ -583,7 +584,10 @@ function App() {
               </select>
             </>)}
             {appMode === "boneCreate" && (<>
-              <span className="toolbar-hint">クリックでボーン配置 / 先端クリックで子ボーン追加</span>
+              <span className="toolbar-hint">
+                {selectedLayerId ? `ローカルボーン追加中 (${selectedLayer?.name})` : "グローバルボーン追加中"}
+                {" — レイヤ未選択でグローバル、選択中はローカル"}
+              </span>
               <button onClick={() => { setBones([]); setSelectedBoneId(null); setLayers(prev => prev.map(l => ({ ...l, weights: [] }))); }}>全ボーン削除</button>
             </>)}
             {appMode === "boneBind" && (<>
@@ -663,9 +667,9 @@ function App() {
             {(appMode === "boneCreate" || appMode === "boneBind") && (
               <div className="side-panel">
                 <div className="bone-list">
-                  <div className="panel-title">ボーン一覧</div>
-                  {bones.length === 0 && <div className="panel-empty">ボーンなし</div>}
-                  {bones.map(bone => (
+                  <div className="panel-title">グローバルボーン</div>
+                  {bones.filter(b => b.layerId === null).length === 0 && <div className="panel-empty">なし</div>}
+                  {bones.filter(b => b.layerId === null).map(bone => (
                     <div key={bone.id} className={`bone-item ${bone.id === selectedBoneId ? "selected" : ""}`}
                       onClick={() => setSelectedBoneId(bone.id)}>
                       {bone.name}
@@ -673,6 +677,19 @@ function App() {
                     </div>
                   ))}
                 </div>
+                {selectedLayerId && (
+                  <div className="bone-list">
+                    <div className="panel-title">ローカルボーン ({selectedLayer?.name})</div>
+                    {bones.filter(b => b.layerId === selectedLayerId).length === 0 && <div className="panel-empty">なし</div>}
+                    {bones.filter(b => b.layerId === selectedLayerId).map(bone => (
+                      <div key={bone.id} className={`bone-item ${bone.id === selectedBoneId ? "selected" : ""}`}
+                        onClick={() => setSelectedBoneId(bone.id)}>
+                        {bone.name}
+                        {bone.parentId && <span className="bone-parent"> ← {bones.find(b => b.id === bone.parentId)?.name}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {weightEditorRows}
               </div>
             )}

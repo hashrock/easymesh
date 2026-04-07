@@ -21,10 +21,11 @@ function pointToSegmentDist(
  */
 export function autoBind(
   points: [number, number][],
-  bones: Bone[]
+  bones: Bone[],
+  layerId?: string | null
 ): VertexWeights[] {
-  // Exclude the first bone (ROOT) from auto-bind
-  const bindBones = bones.filter((_, i) => i > 0);
+  // Use global bones + local bones for this layer, exclude ROOT (first bone)
+  const bindBones = bones.filter((b, i) => i > 0 && (b.layerId === null || b.layerId === layerId));
   if (bindBones.length === 0) return points.map(() => ({}));
 
   return points.map(([px, py]) => {
