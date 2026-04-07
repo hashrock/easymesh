@@ -755,7 +755,7 @@ function App() {
                     };
                     scrub(e.nativeEvent);
                     setIsPlaying(false);
-                    setTimelinePopup(null);
+                    setAddKfMarker(null);
                     const onMove = (ev: MouseEvent) => scrub(ev);
                     const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
                     window.addEventListener("mousemove", onMove);
