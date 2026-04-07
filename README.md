@@ -1,73 +1,49 @@
-# React + TypeScript + Vite
+# EasyMesh
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Live2D風のメッシュアニメーションツール。PNG画像からメッシュを自動生成し、ボーンベースのキーフレームアニメーションを作成できます。
 
-Currently, two official plugins are available:
+## 機能
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### メッシュ生成
+- PNG画像をドロップするとアルファチャンネルから輪郭を自動検出
+- Moore近傍トレーシングによる凹形状対応
+- Delaunay三角形分割でメッシュ生成
+- メッシュ密度の調整、輪郭追従/凸包モードの切替
 
-## React Compiler
+### ボーンシステム
+- クリックでボーンを配置（親子階層対応）
+- 1本目はROOTボーンとして全体制御用に使用
+- 自動ウェイト割当（最近傍ボーン方式）
+- ウェイトペイント（ブラシ半径・強度調整）
+- 頂点選択によるウェイト微調整
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### キーフレームアニメーション
+- ボーンごとに独立したキーフレームトラック
+- 回転・移動X/Yのパラメータ編集
+- タイムラインUI（スクラブ、キーフレームのドラッグ移動・Cmd+ドラッグ複製）
+- Linear Blend Skinningによるメッシュ変形
+- テクスチャ付きアフィン変換描画
+- ループ再生、ループ用キーフレームコピー
 
-## Expanding the ESLint configuration
+### パフォーマンス
+- 重い処理（マスク膨張・輪郭トレース・三角形分割）はWeb Workerで実行
+- スライダー操作のスロットリング
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 開発
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm install
+pnpm dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## ビルド
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm build
 ```
+
+## 技術スタック
+
+- React + TypeScript + Vite
+- [Delaunator](https://github.com/mapbox/delaunator) - Delaunay三角形分割
+- GitHub Pages (GitHub Actions でデプロイ)
